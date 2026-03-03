@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Тарифные планы ──────────────────────────────────────────────────────────
+
+enum Plan {
+  FREE
+  STANDARD
+  PREMIUM
+}
+
+// ─── Супер-администратор SaaS ─────────────────────────────────────────────────
+
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@map("super_admins")
+}
+
+// ─── Ресторан ────────────────────────────────────────────────────────────────
+
+model Restaurant {
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  name         String
+  address      String?
+  phone        String?
+  description  String?
+  logoUrl      String?
+  timezone     String   @default("Europe/Moscow")
+  // { mon: { open: "10:00", close: "22:00", closed: false }, ... }
+  workingHours Json     @default("{}")
+  // { minBookingHours: 2, maxBookingDays: 30, slotMinutes: 30, bufferMinutes: 30, autoConfirm: true }
+  settings     Json     @default("{}")
+  plan         Plan     @default(FREE)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users         User[]
+  halls         Hall[]
+  bookings      Booking[]
+  closedPeriods ClosedPeriod[]
+
+  @@map("restaurants")
+}
+
+// ─── Пользователи (администраторы ресторана) ─────────────────────────────────
+
+model User {
+  id             String   @id @default(uuid())
+  restaurantId   String
+  restaurant     Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  email          String   @unique
+  passwordHash   String
+  name           String
+  role           UserRole @default(OWNER)
+  emailVerified  Boolean  @default(false)
+  verifyToken    String?  @unique
+  refreshToken   String?
+  telegramChatId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("users")
+}
+
+enum UserRole {
+  OWNER
+  MANAGER
+  HOSTESS
+}
+
+// ─── Залы / зоны ─────────────────────────────────────────────────────────────
+
+model Hall {
+  id           String     @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  name         String
+  // Konva.js JSON: { width, height, objects: [...] }
+  floorPlan    Json       @default("{\"width\":800,\"height\":600,\"objects\":[]}")
+  sortOrder    Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  tables        Table[]
+  bookings      Booking[]
+  closedPeriods ClosedPeriod[]
+
+  @@map("halls")
+}
+
+// ─── Столы ───────────────────────────────────────────────────────────────────
+
+model Table {
+  id        String     @id @default(uuid())
+  hallId    String
+  hall      Hall       @relation(fields: [hallId], references: [id], onDelete: Cascade)
+  label     String
+  shape     TableShape @default(SQUARE)
+  minGuests Int        @default(1)
+  maxGuests Int        @default(4)
+  positionX Float      @default(100)
+  positionY Float      @default(100)
+  rotation  Float      @default(0)
+  width     Float      @default(80)
+  height    Float      @default(80)
+  comment   String?
+  tags      String[]   @default([])
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  bookings      Booking[]
+  closedPeriods ClosedPeriod[]
+
+  @@map("tables")
+}
+
+enum TableShape {
+  ROUND
+  SQUARE
+  RECTANGLE
+}
+
+// ─── Брони ───────────────────────────────────────────────────────────────────
+
+model Booking {
+  id           String        @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
+  tableId      String
+  table        Table         @relation(fields: [tableId], references: [id])
+  hallId       String
+  hall         Hall          @relation(fields: [hallId], references: [id])
+  guestName    String
+  guestPhone   String
+  guestEmail   String?
+  guestCount   Int
+  startsAt     DateTime
+  endsAt       DateTime
+  status       BookingStatus @default(PENDING)
+  source       BookingSource @default(ONLINE)
+  notes        String?
+  // Уникальный токен для доступа гостя (просмотр/отмена по ссылке)
+  token        String        @unique @default(uuid())
+  consentGiven Boolean       @default(false)
+  consentAt    DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  notificationLogs NotificationLog[]
+
+  @@index([restaurantId, startsAt])
+  @@index([tableId, startsAt, endsAt])
+  @@map("bookings")
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum BookingSource {
+  ONLINE
+  PHONE
+  MANUAL
+}
+
+// ─── Закрытые периоды (ресторан / отдельный стол) ────────────────────────────
+
+model ClosedPeriod {
+  id           String     @id @default(uuid())
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
+  tableId      String?
+  table        Table?     @relation(fields: [tableId], references: [id])
+  hallId       String?
+  hall         Hall?      @relation(fields: [hallId], references: [id])
+  startsAt     DateTime
+  endsAt       DateTime
+  reason       String?
+  createdAt    DateTime   @default(now())
+
+  @@map("closed_periods")
+}
+
+// ─── Лог уведомлений ─────────────────────────────────────────────────────────
+
+model NotificationLog {
+  id        String    @id @default(uuid())
+  bookingId String
+  booking   Booking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  channel   String    // "telegram" | "sms" | "email"
+  status    String    // "sent" | "failed" | "pending"
+  payload   Json?
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("notification_logs")
+}

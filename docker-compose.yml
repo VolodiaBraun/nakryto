@@ -1,0 +1,49 @@
+name: nakryto
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nakryto_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nakryto}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nakryto_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-nakryto_db}
+    ports:
+      - '5434:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-nakryto}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nakryto_redis
+    ports:
+      - '6380:6379'
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: nakryto_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@nakryto.ru
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '5050:80'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
