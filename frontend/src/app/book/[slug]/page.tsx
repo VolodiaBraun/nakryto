@@ -73,10 +73,19 @@ export default function BookPage({ params }: { params: { slug: string } }) {
 
   const [lockExpiresAt, setLockExpiresAt] = useState<Date | null>(null);
   const [lockTimeLeft, setLockTimeLeft]   = useState(0);
+  const [lockError, setLockError]         = useState('');
 
   const dateScrollRef   = useRef<HTMLDivElement>(null);
   const queryClient     = useQueryClient();
-  const lockIdRef       = useRef(uuidv4());   // стабильный ID сессии
+  // Храним lockId в sessionStorage чтобы пережить перезагрузку страницы
+  const lockIdRef = useRef<string>((() => {
+    if (typeof window === 'undefined') return uuidv4();
+    const stored = sessionStorage.getItem('nakryto_lock_id');
+    if (stored) return stored;
+    const id = uuidv4();
+    sessionStorage.setItem('nakryto_lock_id', id);
+    return id;
+  })());
   const selectedDateRef = useRef(getTodayStr());
   const selectedTableRef = useRef<string | null>(null);
 
@@ -223,14 +232,17 @@ export default function BookPage({ params }: { params: { slug: string } }) {
     if (selectedTableId && selectedTableId !== tableId) {
       doUnlock(selectedTableId, selectedDate);
     }
+    setLockError('');
     try {
       const result: any = await publicApi.lockTable(slug, tableId, selectedDate, lockIdRef.current);
       setSelectedTableId(tableId);
       setSelectedTime(null);
       setLockExpiresAt(new Date(result.expiresAt));
-    } catch {
-      // Кто-то занял стол между кликом и запросом
+    } catch (err: any) {
+      // Стол заняли между кликом и запросом
       queryClient.invalidateQueries({ queryKey: ['tableStatuses', slug, selectedDate] });
+      setLockError(err?.message || 'Стол уже выбирается другим гостем');
+      setTimeout(() => setLockError(''), 3000);
     }
   };
 
@@ -515,9 +527,16 @@ export default function BookPage({ params }: { params: { slug: string } }) {
           )}
 
           {/* Подсказка если нет стола */}
-          {!selectedTableId && (
+          {!selectedTableId && !lockError && (
             <p className="text-center text-gray-400 text-sm pb-6">
               Нажмите на свободный стол чтобы забронировать
+            </p>
+          )}
+
+          {/* Ошибка блокировки */}
+          {lockError && (
+            <p className="text-center text-amber-600 text-sm pb-6 font-medium">
+              ⚠️ {lockError}
             </p>
           )}
         </>

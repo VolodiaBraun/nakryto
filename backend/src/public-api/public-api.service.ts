@@ -25,14 +25,19 @@ export class PublicApiService {
 
   async lockTable(slug: string, tableId: string, date: string, lockId: string) {
     const key = this.lockKey(tableId, date);
+
+    // Если стол уже заблокирован тем же lockId — продлить TTL (идемпотентность)
+    const existing = await this.redis.get(key);
+    if (existing) {
+      const existingLock = JSON.parse(existing);
+      if (existingLock.lockId !== lockId) {
+        throw new ConflictException('Стол уже бронируется другим гостем');
+      }
+    }
+
     const expiresAt = new Date(Date.now() + LOCK_TTL * 1000).toISOString();
     const value = JSON.stringify({ lockId, slug, expiresAt });
-
-    // SET NX EX — занять только если никто не занял
-    const result = await this.redis.set(key, value, 'EX', LOCK_TTL, 'NX');
-    if (result !== 'OK') {
-      throw new ConflictException('Стол уже бронируется другим гостем');
-    }
+    await this.redis.set(key, value, 'EX', LOCK_TTL);
 
     this.gateway.notifyTableLocked(slug, date, tableId, expiresAt);
     return { success: true, expiresAt };

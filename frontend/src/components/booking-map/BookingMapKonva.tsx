@@ -161,7 +161,8 @@ export default function BookingMapKonva({
 
   const handleTableClick = useCallback((table: TableObject) => {
     const status = tableStatuses[table.id];
-    if (status === 'BOOKED' || status === 'LOCKED') return;
+    if (status === 'BOOKED') return;
+    // LOCKED — разрешаем клик: может быть наш стол после перезагрузки страницы
     if (guestCount > table.maxGuests || guestCount < table.minGuests) return;
     if (tagFilter && !(table.tags ?? []).includes(tagFilter)) return;
     onTableSelect(table.id);
