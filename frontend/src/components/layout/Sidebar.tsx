@@ -70,7 +70,7 @@ export function Sidebar() {
       {/* Public link */}
       <div className="p-3 border-t border-gray-100">
         <a
-          href={`http://localhost:3000/book/${restaurant?.slug}`}
+          href={`/book/${restaurant?.slug}`}
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-gray-600 hover:bg-gray-100 transition-colors"
