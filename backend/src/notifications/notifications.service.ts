@@ -2,6 +2,13 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
+import { MailerService } from './mailer.service';
+import {
+  verificationEmail,
+  passwordResetEmail,
+  newBookingStaffEmail,
+  newRestaurantSuperAdminEmail,
+} from './email-templates';
 
 @Injectable()
 export class NotificationsService {
@@ -10,32 +17,94 @@ export class NotificationsService {
   constructor(
     private prisma: PrismaService,
     private config: ConfigService,
+    private mailer: MailerService,
   ) {}
 
-  async sendTelegramToRestaurant(restaurantId: string, message: string) {
-    const restaurant = await this.prisma.restaurant.findUnique({
-      where: { id: restaurantId },
-      include: { users: { where: { role: 'OWNER' } } },
-    });
+  // ─── Auth notifications ──────────────────────────────────────────────────────
 
-    const owner = restaurant?.users[0];
-    if (!owner?.telegramChatId) {
-      this.logger.warn(`Нет Telegram chat ID для ресторана ${restaurantId}`);
-      return;
-    }
-
-    await this.sendTelegram(owner.telegramChatId, message);
+  async sendVerificationEmail(to: string, name: string, token: string): Promise<void> {
+    const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+    const url = `${frontendUrl}/verify-email?token=${token}`;
+    await this.mailer.send(to, 'Подтвердите ваш email — Накрыто', verificationEmail(name, url));
   }
 
-  async sendSmsToGuest(phone: string, message: string, bookingId: string) {
+  async sendPasswordResetEmail(to: string, name: string, token: string): Promise<void> {
+    const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+    const url = `${frontendUrl}/reset-password?token=${token}`;
+    await this.mailer.send(to, 'Сброс пароля — Накрыто', passwordResetEmail(name, url));
+  }
+
+  // ─── Booking notifications ───────────────────────────────────────────────────
+
+  async notifyStaffNewBooking(bookingId: string): Promise<void> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        restaurant: {
+          include: { users: { select: { email: true, role: true } } },
+        },
+        table: true,
+        hall: true,
+      },
+    });
+
+    if (!booking) return;
+
+    const { restaurant, table, hall } = booking;
+    const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+    const dashboardUrl = `${frontendUrl}/dashboard/bookings`;
+
+    // Собираем получателей: все сотрудники + notificationEmails из настроек
+    const staffEmails = restaurant.users.map((u) => u.email);
+    const settings = (restaurant.settings as any) || {};
+    const extraEmails: string[] = settings.notificationEmails || [];
+    const allEmails = [...new Set([...staffEmails, ...extraEmails])].filter(Boolean);
+
+    if (allEmails.length === 0) return;
+
+    const html = newBookingStaffEmail(
+      booking,
+      restaurant.name,
+      `№${table.label}`,
+      hall.name,
+      dashboardUrl,
+    );
+
+    await this.mailer.send(allEmails, `Новая бронь — ${restaurant.name}`, html);
+
+    // Логируем в NotificationLog
+    await this.prisma.notificationLog.create({
+      data: {
+        bookingId,
+        channel: 'email',
+        status: 'sent',
+        payload: { to: allEmails, type: 'staff_new_booking' },
+        sentAt: new Date(),
+      },
+    });
+  }
+
+  // ─── SuperAdmin notifications ─────────────────────────────────────────────────
+
+  async notifySuperAdminNewRestaurant(restaurantName: string, ownerName: string, ownerEmail: string): Promise<void> {
+    const superAdminEmail = this.config.get('SUPERADMIN_EMAIL', 'superadmin@nakryto.ru');
+    const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+    const dashboardUrl = `${frontendUrl}/superadmin`;
+
+    await this.mailer.send(
+      superAdminEmail,
+      `Новый ресторан: ${restaurantName}`,
+      newRestaurantSuperAdminEmail(restaurantName, ownerName, ownerEmail, dashboardUrl),
+    );
+  }
+
+  // ─── SMS (stub, для будущего подключения SMSC) ────────────────────────────────
+
+  async sendSmsToGuest(phone: string, message: string, bookingId: string): Promise<void> {
     try {
       const login = this.config.get('SMSC_LOGIN');
       const password = this.config.get('SMSC_PASSWORD');
-
-      if (!login || !password) {
-        this.logger.warn('SMSC не настроен, SMS не отправлен');
-        return;
-      }
+      if (!login || !password) return;
 
       const url = new URL('https://smsc.ru/sys/send.php');
       url.searchParams.set('login', login);
@@ -57,100 +126,27 @@ export class NotificationsService {
           sentAt: status === 'sent' ? new Date() : null,
         },
       });
-
-      this.logger.log(`SMS [${status}] → ${phone}`);
-    } catch (error) {
-      this.logger.error(`Ошибка отправки SMS: ${error.message}`);
+    } catch (err) {
+      this.logger.error(`SMS error: ${err.message}`);
     }
   }
 
-  async sendEmail(to: string, subject: string, html: string, bookingId: string) {
-    try {
-      const apiKey = this.config.get('RESEND_API_KEY');
-      const from = this.config.get('EMAIL_FROM') || 'noreply@nakryto.ru';
+  // ─── Telegram (stub, для будущего подключения) ────────────────────────────────
 
-      if (!apiKey || apiKey.startsWith('re_xxxx')) {
-        this.logger.warn('Resend API не настроен');
-        return;
-      }
-
-      const response = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from, to, subject, html }),
-      });
-
-      const status = response.ok ? 'sent' : 'failed';
-
-      await this.prisma.notificationLog.create({
-        data: { bookingId, channel: 'email', status, payload: { to, subject }, sentAt: status === 'sent' ? new Date() : null },
-      });
-    } catch (error) {
-      this.logger.error(`Ошибка отправки Email: ${error.message}`);
-    }
-  }
-
-  async notifyNewBooking(bookingId: string) {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { restaurant: { include: { users: true } }, table: true, hall: true },
+  async sendTelegramToRestaurant(restaurantId: string, message: string): Promise<void> {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { id: restaurantId },
+      include: { users: { where: { role: 'OWNER' } } },
     });
-
-    if (!booking) return;
-
-    const { restaurant, table, hall } = booking;
-    const dateStr = booking.startsAt.toLocaleDateString('ru-RU');
-    const timeStr = booking.startsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-
-    const telegramMsg =
-      `🍽 Новая бронь!\n\n` +
-      `👤 ${booking.guestName}\n` +
-      `📱 ${booking.guestPhone}\n` +
-      `📅 ${dateStr} в ${timeStr}\n` +
-      `🪑 Стол ${table.label} (${hall.name}), ${booking.guestCount} гостей\n` +
-      `📝 ${booking.notes || 'Без комментариев'}`;
-
-    await this.sendTelegramToRestaurant(restaurant.id, telegramMsg);
-
-    const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:3000';
-    const smsText = `Бронь подтверждена! ${restaurant.name}, ${dateStr} ${timeStr}, стол ${table.label}. Отмена: ${frontendUrl}/booking/${booking.token}`;
-    await this.sendSmsToGuest(booking.guestPhone, smsText, bookingId);
-
-    if (booking.guestEmail) {
-      await this.sendEmail(
-        booking.guestEmail,
-        `Бронь подтверждена — ${restaurant.name}`,
-        this.buildConfirmationEmail(booking, restaurant, table, hall),
-        bookingId,
-      );
-    }
+    const owner = restaurant?.users[0];
+    if (!owner?.telegramChatId) return;
+    await this._sendTelegram(owner.telegramChatId, message);
   }
 
-  async notifyCancellation(bookingId: string) {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { restaurant: { include: { users: true } }, table: true },
-    });
-
-    if (!booking) return;
-
-    const { restaurant, table } = booking;
-    const dateStr = booking.startsAt.toLocaleDateString('ru-RU');
-    const timeStr = booking.startsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-
-    const telegramMsg =
-      `❌ Отмена брони\n\n` +
-      `👤 ${booking.guestName} (${booking.guestPhone})\n` +
-      `📅 ${dateStr} в ${timeStr}, стол ${table.label}`;
-
-    await this.sendTelegramToRestaurant(restaurant.id, telegramMsg);
-
-    const smsText = `Ваша бронь в ${restaurant.name} на ${dateStr} ${timeStr} отменена.`;
-    await this.sendSmsToGuest(booking.guestPhone, smsText, bookingId);
-  }
+  // ─── Reminders cron ──────────────────────────────────────────────────────────
 
   @Cron('0 10 * * *')
-  async sendReminders24h() {
+  async sendReminders24h(): Promise<void> {
     const tomorrow = new Date();
     tomorrow.setDate(tomorrow.getDate() + 1);
     const start = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate(), 0, 0, 0);
@@ -164,49 +160,27 @@ export class NotificationsService {
     for (const booking of bookings) {
       const dateStr = booking.startsAt.toLocaleDateString('ru-RU');
       const timeStr = booking.startsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-      const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:3000';
-      const smsText = `Напоминание: завтра ${dateStr} в ${timeStr} у вас бронь в ${booking.restaurant.name}, стол ${booking.table.label}. Отмена: ${frontendUrl}/booking/${booking.token}`;
-      await this.sendSmsToGuest(booking.guestPhone, smsText, booking.id);
+      const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+      const msg = `Напоминание: завтра ${dateStr} в ${timeStr} бронь в ${booking.restaurant.name}, стол ${booking.table.label}. Отмена: ${frontendUrl}/booking/${booking.token}`;
+      await this.sendSmsToGuest(booking.guestPhone, msg, booking.id);
     }
 
     this.logger.log(`Отправлено ${bookings.length} напоминаний`);
   }
 
-  private async sendTelegram(chatId: string, text: string) {
+  // ─── Private ─────────────────────────────────────────────────────────────────
+
+  private async _sendTelegram(chatId: string, text: string): Promise<void> {
     const token = this.config.get('TELEGRAM_BOT_TOKEN');
     if (!token || token === 'your_bot_token') return;
-
     try {
       await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML' }),
       });
-    } catch (error) {
-      this.logger.error(`Ошибка Telegram: ${error.message}`);
+    } catch (err) {
+      this.logger.error(`Telegram error: ${err.message}`);
     }
-  }
-
-  private buildConfirmationEmail(booking: any, restaurant: any, table: any, hall: any): string {
-    const dateStr = booking.startsAt.toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const timeStr = booking.startsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-    const frontendUrl = this.config.get('FRONTEND_URL') || 'http://localhost:3000';
-
-    return `
-      <div style="font-family:sans-serif;max-width:600px;margin:0 auto;">
-        <h2>Бронь подтверждена ✅</h2>
-        <p>Здравствуйте, <strong>${booking.guestName}</strong>!</p>
-        <p>Ваша бронь в ресторане <strong>${restaurant.name}</strong> подтверждена.</p>
-        <table style="border-collapse:collapse;width:100%;">
-          <tr><td style="padding:8px;border:1px solid #eee;"><strong>Дата</strong></td><td style="padding:8px;border:1px solid #eee;">${dateStr}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #eee;"><strong>Время</strong></td><td style="padding:8px;border:1px solid #eee;">${timeStr}</td></tr>
-          <tr><td style="padding:8px;border:1px solid #eee;"><strong>Стол</strong></td><td style="padding:8px;border:1px solid #eee;">${table.label} (${hall.name})</td></tr>
-          <tr><td style="padding:8px;border:1px solid #eee;"><strong>Гостей</strong></td><td style="padding:8px;border:1px solid #eee;">${booking.guestCount}</td></tr>
-        </table>
-        <p style="margin-top:20px;">
-          <a href="${frontendUrl}/booking/${booking.token}" style="background:#ef4444;color:white;padding:10px 20px;text-decoration:none;border-radius:6px;">Отменить бронь</a>
-        </p>
-      </div>
-    `;
   }
 }

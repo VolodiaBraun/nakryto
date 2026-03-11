@@ -96,9 +96,13 @@ export const authApi = {
   me: () => request('/api/auth/me'),
 
   logout: () => request('/api/auth/logout', { method: 'POST' }),
-};
 
-// ─── Restaurant ───────────────────────────────────────────────────────────────
+  forgotPassword: (email: string) =>
+    request('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+
+  resetPassword: (token: string, password: string) =>
+    request('/api/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
+};
 
 export const restaurantApi = {
   getProfile: () => request('/api/restaurant/profile'),

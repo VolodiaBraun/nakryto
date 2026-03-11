@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
@@ -17,6 +18,7 @@ export class BookingsService {
   constructor(
     private prisma: PrismaService,
     private gateway: BookingGateway,
+    private notifications: NotificationsService,
   ) {}
 
   private notify(
@@ -198,6 +200,7 @@ export class BookingsService {
     });
 
     this.notify((booking as any).restaurant.slug, booking.startsAt, 'booking_created', booking.tableId);
+    this.notifications.notifyStaffNewBooking(booking.id).catch(() => {});
     return booking;
   }
 
