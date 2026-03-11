@@ -135,6 +135,22 @@ export class AuthService {
     return { message: 'Email успешно подтверждён' };
   }
 
+  async resendVerification(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Пользователь не найден');
+    if (user.emailVerified) return { message: 'Email уже подтверждён' };
+
+    // Генерируем новый токен если старый потерян
+    let token = user.verifyToken;
+    if (!token) {
+      token = uuidv4();
+      await this.prisma.user.update({ where: { id: user.id }, data: { verifyToken: token } });
+    }
+
+    this.notifications.sendVerificationEmail(user.email, user.name, token).catch(() => {});
+    return { message: 'Письмо с подтверждением отправлено' };
+  }
+
   async forgotPassword(email: string) {
     // Всегда отвечаем успехом (не раскрываем существование email)
     const user = await this.prisma.user.findUnique({ where: { email } });

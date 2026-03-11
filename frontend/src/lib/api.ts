@@ -97,6 +97,9 @@ export const authApi = {
 
   logout: () => request('/api/auth/logout', { method: 'POST' }),
 
+  resendVerification: () =>
+    request('/api/auth/resend-verification', { method: 'POST' }),
+
   forgotPassword: (email: string) =>
     request('/api/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
 

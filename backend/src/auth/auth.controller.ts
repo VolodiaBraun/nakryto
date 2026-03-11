@@ -46,6 +46,14 @@ export class AuthController {
     return this.authService.verifyEmail(token);
   }
 
+  @Post('resend-verification')
+  @UseGuards(JwtGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Повторная отправка письма с подтверждением email' })
+  resendVerification(@CurrentUser('id') userId: string) {
+    return this.authService.resendVerification(userId);
+  }
+
   @Post('forgot-password')
   @ApiOperation({ summary: 'Запрос на сброс пароля (отправка письма)' })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
