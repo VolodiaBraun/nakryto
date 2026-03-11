@@ -47,6 +47,11 @@ export default function HallsPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['halls'] }),
   });
 
+  const renameMutation = useMutation({
+    mutationFn: ({ id, name }: { id: string; name: string }) => hallsApi.update(id, { name }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['halls'] }),
+  });
+
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (newName.trim()) createMutation.mutate(newName.trim());
@@ -110,6 +115,7 @@ export default function HallsPage() {
               onDelete={() => {
                 if (confirm(`Удалить зал "${hall.name}"?`)) deleteMutation.mutate(hall.id);
               }}
+              onRename={(name) => renameMutation.mutate({ id: hall.id, name })}
             />
           ))}
 
@@ -167,8 +173,25 @@ export default function HallsPage() {
   );
 }
 
-function HallCard({ hall, canManage, onEdit, onDelete }: { hall: Hall; canManage: boolean; onEdit: () => void; onDelete: () => void }) {
+function HallCard({ hall, canManage, onEdit, onDelete, onRename }: { hall: Hall; canManage: boolean; onEdit: () => void; onDelete: () => void; onRename: (name: string) => void }) {
   const tablesCount = hall.tables?.length || 0;
+  const [editing, setEditing] = useState(false);
+  const [nameValue, setNameValue] = useState(hall.name);
+
+  function commitRename() {
+    const trimmed = nameValue.trim();
+    if (trimmed && trimmed !== hall.name) {
+      onRename(trimmed);
+    } else {
+      setNameValue(hall.name);
+    }
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter') commitRename();
+    if (e.key === 'Escape') { setNameValue(hall.name); setEditing(false); }
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 hover:shadow-md transition-shadow">
@@ -178,11 +201,33 @@ function HallCard({ hall, canManage, onEdit, onDelete }: { hall: Hall; canManage
       </div>
 
       <div className="flex items-start justify-between">
-        <div>
-          <h3 className="font-medium text-gray-900">{hall.name}</h3>
+        <div className="flex-1 min-w-0 mr-2">
+          {editing ? (
+            <input
+              autoFocus
+              value={nameValue}
+              onChange={(e) => setNameValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={handleKeyDown}
+              className="w-full text-sm font-medium text-gray-900 border border-blue-400 rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          ) : (
+            <div className="flex items-center gap-1 group">
+              <h3 className="font-medium text-gray-900 truncate">{hall.name}</h3>
+              {canManage && (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-gray-700 transition-opacity flex-shrink-0"
+                  title="Переименовать"
+                >
+                  ✏️
+                </button>
+              )}
+            </div>
+          )}
           <p className="text-sm text-gray-500 mt-0.5">{tablesCount} столов</p>
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-shrink-0">
           <button
             onClick={onEdit}
             className="px-3 py-1.5 text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors"

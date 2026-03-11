@@ -19,6 +19,8 @@ export default function SettingsPage() {
   const [profile, setProfile] = useState({ name: '', address: '', phone: '', description: '' });
   const [settings, setSettings] = useState({ minBookingHours: 2, maxBookingDays: 30, slotMinutes: 30, bufferMinutes: 30, autoConfirm: true });
   const [hours, setHours] = useState<any>({});
+  const [notificationEmails, setNotificationEmails] = useState<string[]>([]);
+  const [emailInput, setEmailInput] = useState('');
 
   const hasAccess = can('manageSettings');
 
@@ -37,7 +39,9 @@ export default function SettingsPage() {
   useEffect(() => {
     if (restaurant) {
       setProfile({ name: restaurant.name, address: restaurant.address || '', phone: restaurant.phone || '', description: restaurant.description || '' });
-      setSettings({ ...(restaurant.settings as any) });
+      const s = (restaurant.settings as any) || {};
+      setSettings({ minBookingHours: s.minBookingHours ?? 2, maxBookingDays: s.maxBookingDays ?? 30, slotMinutes: s.slotMinutes ?? 30, bufferMinutes: s.bufferMinutes ?? 30, autoConfirm: s.autoConfirm ?? true });
+      setNotificationEmails(s.notificationEmails || []);
       setHours(restaurant.workingHours as any);
     }
   }, [restaurant]);
@@ -48,7 +52,7 @@ export default function SettingsPage() {
   });
 
   const updateSettings = useMutation({
-    mutationFn: () => restaurantApi.updateSettings(settings),
+    mutationFn: () => restaurantApi.updateSettings({ ...settings, notificationEmails }),
     onSuccess: flash,
   });
 
@@ -151,6 +155,61 @@ export default function SettingsPage() {
         </div>
         <button onClick={() => updateHours.mutate()} disabled={updateHours.isPending} className="btn-primary">
           {updateHours.isPending ? 'Сохранение...' : 'Сохранить расписание'}
+        </button>
+      </Section>
+
+      {/* Уведомления */}
+      <Section title="Email-уведомления">
+        <p className="text-sm text-gray-500">На эти адреса будут приходить письма при новых бронях и отменах.</p>
+        <div className="flex flex-wrap gap-2 min-h-10 p-2 border border-gray-200 rounded-lg bg-gray-50">
+          {notificationEmails.map((email) => (
+            <span key={email} className="flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-800 text-sm rounded-full">
+              {email}
+              <button
+                type="button"
+                onClick={() => setNotificationEmails(notificationEmails.filter((e) => e !== email))}
+                className="ml-1 text-blue-500 hover:text-blue-800 leading-none"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {notificationEmails.length === 0 && <span className="text-sm text-gray-400 self-center">Нет адресов</span>}
+        </div>
+        <div className="flex gap-2">
+          <input
+            type="email"
+            value={emailInput}
+            onChange={(e) => setEmailInput(e.target.value)}
+            onKeyDown={(e) => {
+              if ((e.key === 'Enter' || e.key === ',') && emailInput.trim()) {
+                e.preventDefault();
+                const val = emailInput.trim().replace(/,$/, '');
+                if (val && !notificationEmails.includes(val)) {
+                  setNotificationEmails([...notificationEmails, val]);
+                }
+                setEmailInput('');
+              }
+            }}
+            placeholder="email@example.com"
+            className="input flex-1"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const val = emailInput.trim();
+              if (val && !notificationEmails.includes(val)) {
+                setNotificationEmails([...notificationEmails, val]);
+              }
+              setEmailInput('');
+            }}
+            className="btn-secondary"
+          >
+            Добавить
+          </button>
+        </div>
+        <button onClick={() => updateSettings.mutate()} disabled={updateSettings.isPending} className="btn-primary">
+          {updateSettings.isPending ? 'Сохранение...' : 'Сохранить уведомления'}
         </button>
       </Section>
 

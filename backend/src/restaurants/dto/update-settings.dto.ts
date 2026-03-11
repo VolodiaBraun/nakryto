@@ -1,4 +1,4 @@
-import { IsNumber, IsBoolean, IsOptional, Min, Max } from 'class-validator';
+import { IsNumber, IsBoolean, IsOptional, Min, Max, IsArray, IsEmail } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateSettingsDto {
@@ -32,4 +32,10 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsBoolean()
   autoConfirm?: boolean;
+
+  @ApiPropertyOptional({ description: 'Email-адреса для уведомлений о бронях', example: ['manager@restaurant.ru'] })
+  @IsOptional()
+  @IsArray()
+  @IsEmail({}, { each: true })
+  notificationEmails?: string[];
 }
