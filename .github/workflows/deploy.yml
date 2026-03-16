@@ -1,8 +1,8 @@
-name: Deploy to Production
+name: Deploy
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
     inputs:
       target:
@@ -15,14 +15,29 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ─── Setup ───────────────────────────────────────────────────────────────
+      # ─── Определяем окружение ─────────────────────────────────────────────────
+      - name: Set environment variables
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "ENV=prod" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/opt/nakryto/prod" >> $GITHUB_ENV
+            echo "BACKEND_CONTAINER=nakryto_backend" >> $GITHUB_ENV
+            echo "FRONTEND_CONTAINER=nakryto_frontend" >> $GITHUB_ENV
+            echo "API_URL=https://api.nakryto.ru" >> $GITHUB_ENV
+          else
+            echo "ENV=staging" >> $GITHUB_ENV
+            echo "DEPLOY_PATH=/opt/nakryto/staging" >> $GITHUB_ENV
+            echo "BACKEND_CONTAINER=nakryto_staging_backend" >> $GITHUB_ENV
+            echo "FRONTEND_CONTAINER=nakryto_staging_frontend" >> $GITHUB_ENV
+            echo "API_URL=https://staging.nakryto.ru" >> $GITHUB_ENV
+          fi
 
+      # ─── Setup ───────────────────────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -33,91 +48,62 @@ jobs:
         with:
           version: 9
 
-      - name: Setup SSH key
+      - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
 
-      # ─── Backend build & deploy ───────────────────────────────────────────────
-
+      # ─── Backend ──────────────────────────────────────────────────────────────
       - name: Build backend
-        if: ${{ github.event_name == 'push' || inputs.target == 'both' || inputs.target == 'backend' }}
         working-directory: backend
         run: |
           pnpm install --frozen-lockfile
+          rm -f tsconfig.build.tsbuildinfo
           pnpm exec prisma generate
           pnpm build
 
-      - name: Deploy backend dist
-        if: ${{ github.event_name == 'push' || inputs.target == 'both' || inputs.target == 'backend' }}
+      - name: Deploy backend
         run: |
-          # Upload compiled dist to server
           rsync -az --delete \
             -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             backend/dist/ \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/root/nakryto/backend/dist/
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ env.DEPLOY_PATH }}/backend/dist/
 
-          # Upload package.json (for production dependencies list)
-          scp -i ~/.ssh/id_rsa \
-            backend/package.json \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/root/nakryto/backend/package.json
-
-          # Upload prisma schema (for potential generate in container)
-          rsync -az \
-            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
-            backend/prisma/ \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/root/nakryto/backend/prisma/
-
-      - name: Restart backend container
-        if: ${{ github.event_name == 'push' || inputs.target == 'both' || inputs.target == 'backend' }}
-        run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
-            "docker restart nakryto_backend && echo 'Backend restarted'"
+            "docker restart ${{ env.BACKEND_CONTAINER }} && echo 'Backend restarted'"
 
-      # ─── Frontend build & deploy ──────────────────────────────────────────────
-
+      # ─── Frontend ─────────────────────────────────────────────────────────────
       - name: Build frontend
-        if: ${{ github.event_name == 'push' || inputs.target == 'both' || inputs.target == 'frontend' }}
         working-directory: frontend
         env:
-          NEXT_PUBLIC_API_URL: ${{ secrets.PROD_NEXT_PUBLIC_API_URL }}
+          NEXT_PUBLIC_API_URL: ${{ env.API_URL }}
         run: |
           pnpm install --frozen-lockfile
           pnpm build
 
       - name: Deploy frontend
-        if: ${{ github.event_name == 'push' || inputs.target == 'both' || inputs.target == 'frontend' }}
         run: |
-          # Upload .next build
           rsync -az --delete \
             -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             frontend/.next/ \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/root/nakryto/frontend/.next/
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ env.DEPLOY_PATH }}/frontend/.next/
 
-          # Upload public assets
           rsync -az --delete \
             -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
             frontend/public/ \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/root/nakryto/frontend/public/
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ env.DEPLOY_PATH }}/frontend/public/
 
-          # Upload package.json
-          scp -i ~/.ssh/id_rsa \
-            frontend/package.json \
-            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/root/nakryto/frontend/package.json
-
-      - name: Restart frontend container
-        if: ${{ github.event_name == 'push' || inputs.target == 'both' || inputs.target == 'frontend' }}
-        run: |
           ssh -i ~/.ssh/id_rsa ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
-            "docker restart nakryto_frontend && echo 'Frontend restarted'"
+            "docker restart ${{ env.FRONTEND_CONTAINER }} && echo 'Frontend restarted'"
 
-      # ─── Smoke test ───────────────────────────────────────────────────────────
-
-      - name: Smoke test
+      # ─── Summary ─────────────────────────────────────────────────────────────
+      - name: Print result
         run: |
-          sleep 10
-          curl -f https://nakryto.ru/api/health 2>/dev/null || \
-          curl -f https://api.nakryto.ru/api/health 2>/dev/null || \
-          echo "Health check skipped (endpoint may not exist)"
+          echo "✅ Deployed to ${{ env.ENV }}"
+          if [[ "${{ env.ENV }}" == "prod" ]]; then
+            echo "🌐 https://nakryto.ru"
+          else
+            echo "🧪 https://staging.nakryto.ru"
+          fi
