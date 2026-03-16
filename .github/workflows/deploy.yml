@@ -49,9 +49,11 @@ jobs:
           version: 9
 
       - name: Setup SSH
+        env:
+          PRIVATE_KEY: ${{ secrets.PROD_SSH_KEY }}
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.PROD_SSH_KEY }}" | tr -d '\r' > ~/.ssh/id_rsa
+          printf '%s\n' "$PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.PROD_SSH_HOST }} >> ~/.ssh/known_hosts
 
