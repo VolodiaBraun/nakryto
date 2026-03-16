@@ -73,8 +73,21 @@ jobs:
             backend/dist/ \
             ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ env.DEPLOY_PATH }}/backend/dist/
 
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            backend/prisma/migrations/ \
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ env.DEPLOY_PATH }}/backend/prisma/migrations/
+
+          rsync -az \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            backend/prisma/schema.prisma \
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ env.DEPLOY_PATH }}/backend/prisma/schema.prisma
+
           ssh -i ~/.ssh/id_rsa ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
-            "docker restart ${{ env.BACKEND_CONTAINER }} && echo 'Backend restarted'"
+            "docker cp ${{ env.DEPLOY_PATH }}/backend/prisma/. ${{ env.BACKEND_CONTAINER }}:/app/prisma/ && \
+             docker exec ${{ env.BACKEND_CONTAINER }} npx prisma migrate deploy && \
+             docker exec ${{ env.BACKEND_CONTAINER }} npx prisma generate && \
+             docker restart ${{ env.BACKEND_CONTAINER }} && echo 'Backend restarted'"
 
       # ─── Frontend ─────────────────────────────────────────────────────────────
       - name: Build frontend
