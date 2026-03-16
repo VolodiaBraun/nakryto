@@ -235,6 +235,11 @@ export class HallsService {
   async remove(id: string, restaurantId: string) {
     await this.findOne(id, restaurantId);
 
+    await this.prisma.table.updateMany({
+      where: { hallId: id },
+      data: { isActive: false },
+    });
+
     return this.prisma.hall.update({
       where: { id },
       data: { isActive: false },

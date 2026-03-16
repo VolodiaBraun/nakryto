@@ -117,7 +117,7 @@ function ZoomControls({ scale, onZoomIn, onZoomOut, onReset }: {
 function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable }: {
   obj: TableObject;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (shiftKey?: boolean) => void;
   onDragEnd: (x: number, y: number) => void;
   onTransformEnd: (x: number, y: number, w: number, h: number, r: number) => void;
   draggable: boolean;
@@ -134,7 +134,7 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
       x={obj.x} y={obj.y}
       rotation={obj.rotation}
       draggable={draggable}
-      onClick={(e) => { e.cancelBubble = true; onSelect(); }}
+      onClick={(e) => { e.cancelBubble = true; onSelect(e.evt.shiftKey); }}
       onTap={(e) => { e.cancelBubble = true; onSelect(); }}
       onDragEnd={(e) => { onDragEnd(snapToGrid(e.target.x()), snapToGrid(e.target.y())); }}
       onTransformEnd={() => {
@@ -182,7 +182,7 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
 function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable }: {
   obj: DecorativeObject;
   isSelected: boolean;
-  onSelect: () => void;
+  onSelect: (shiftKey?: boolean) => void;
   onDragEnd: (x: number, y: number) => void;
   onTransformEnd: (x: number, y: number, w: number, h: number, r: number) => void;
   draggable: boolean;
@@ -198,7 +198,7 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
       rotation={obj.rotation}
       draggable={draggable}
       opacity={0.85}
-      onClick={(e) => { e.cancelBubble = true; onSelect(); }}
+      onClick={(e) => { e.cancelBubble = true; onSelect(e.evt.shiftKey); }}
       onTap={(e) => { e.cancelBubble = true; onSelect(); }}
       onDragEnd={(e) => onDragEnd(snapToGrid(e.target.x()), snapToGrid(e.target.y()))}
       onTransformEnd={() => {
@@ -228,9 +228,11 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
 
 interface KonvaCanvasProps {
   floorPlan: FloorPlan;
-  selectedId: string | null;
+  selectedIds: string[];
   activeTool: Tool;
-  onSelect: (id: string | null) => void;
+  onSelect: (id: string, shiftKey?: boolean) => void;
+  onDeselectAll: () => void;
+  onBoxSelect: (ids: string[]) => void;
   onCanvasClick: (x: number, y: number) => void;
   onObjectMove: (id: string, x: number, y: number) => void;
   onObjectTransform: (id: string, x: number, y: number, width: number, height: number, rotation: number) => void;
@@ -239,21 +241,34 @@ interface KonvaCanvasProps {
 // ─── Компонент ────────────────────────────────────────────────────────────────
 
 export default function KonvaCanvas({
-  floorPlan, selectedId, activeTool, onSelect, onCanvasClick, onObjectMove, onObjectTransform,
+  floorPlan, selectedIds, activeTool, onSelect, onDeselectAll, onBoxSelect, onCanvasClick, onObjectMove, onObjectTransform,
 }: KonvaCanvasProps) {
-  const stageRef      = useRef<Konva.Stage>(null);
+  const stageRef       = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
-  const containerRef  = useRef<HTMLDivElement>(null);
-  const didInit       = useRef(false);
-  const didDrag       = useRef(false);
-  const isPanning     = useRef(false);
-  const panOrigin     = useRef({ mx: 0, my: 0, sx: 0, sy: 0 });
+  const containerRef   = useRef<HTMLDivElement>(null);
+  const didInit        = useRef(false);
+  const didDrag        = useRef(false);
+  const isPanning      = useRef(false);
+  const panOrigin      = useRef({ mx: 0, my: 0, sx: 0, sy: 0 });
+
+  // Rubber-band selection
+  const selBoxStart    = useRef<{ x: number; y: number } | null>(null);
+  const selBoxRef      = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [selBox, setSelBox] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  // Stable refs для mouseUp (избегаем stale closure)
+  const floorPlanRef    = useRef(floorPlan);
+  floorPlanRef.current  = floorPlan;
+  const onBoxSelectRef  = useRef(onBoxSelect);
+  onBoxSelectRef.current = onBoxSelect;
 
   const [containerSize, setContainerSize] = useState({ w: 900, h: 600 });
   const [scale, setScale]       = useState(0.9);
   const [stagePos, setStagePos] = useState({ x: RULER + 16, y: RULER + 16 });
 
-  const isSelectMode = activeTool === 'select';
+  const isSelectMode    = activeTool === 'select';
+  const isBoxSelectMode = activeTool === 'select-box';
+  const selectedId = selectedIds[0] ?? null; // первый выбранный (для Transformer при единственном)
 
   // Измеряем контейнер
   useEffect(() => {
@@ -280,18 +295,18 @@ export default function KonvaCanvas({
     });
   }, [containerSize, floorPlan.width, floorPlan.height]);
 
-  // Трансформер
+  // Трансформер (только для одиночного выделения — resize/rotate)
   useEffect(() => {
     const tr = transformerRef.current;
     const stage = stageRef.current;
     if (!tr || !stage) return;
-    if (selectedId && isSelectMode) {
-      const node = stage.findOne(`#${selectedId}`);
+    if (selectedIds.length === 1 && isSelectMode) {
+      const node = stage.findOne(`#${selectedIds[0]}`);
       if (node) { tr.nodes([node]); tr.getLayer()?.batchDraw(); return; }
     }
     tr.nodes([]);
     tr.getLayer()?.batchDraw();
-  }, [selectedId, isSelectMode, floorPlan]);
+  }, [selectedIds, isSelectMode, floorPlan]);
 
   // Зум колёсиком
   const handleWheel = useCallback((e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -332,33 +347,78 @@ export default function KonvaCanvas({
     });
   }, [containerSize, floorPlan.width, floorPlan.height]);
 
-  // Панорамирование — только по пустому фону
-  const handleStagePanStart = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+  // ─── Мышь: pan + rubber-band ─────────────────────────────────────────────────
+
+  const handleMouseDown = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (isBoxSelectMode) {
+      const stage = stageRef.current!;
+      const ptr = stage.getPointerPosition()!;
+      const x = (ptr.x - stage.x()) / stage.scaleX();
+      const y = (ptr.y - stage.y()) / stage.scaleY();
+      selBoxStart.current = { x, y };
+      selBoxRef.current = { x, y, w: 0, h: 0 };
+      setSelBox({ x, y, w: 0, h: 0 });
+      didDrag.current = false;
+      return;
+    }
+    // Pan — только по пустому фону
     if (e.target !== stageRef.current) return;
     isPanning.current = true;
     didDrag.current = false;
     const stage = stageRef.current!;
     panOrigin.current = { mx: e.evt.clientX, my: e.evt.clientY, sx: stage.x(), sy: stage.y() };
-  }, []);
+  }, [isBoxSelectMode]);
 
-  const handleStagePanMove = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+  const handleMouseMove = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
+    if (isBoxSelectMode && selBoxStart.current) {
+      const stage = stageRef.current!;
+      const ptr = stage.getPointerPosition()!;
+      const cx = (ptr.x - stage.x()) / stage.scaleX();
+      const cy = (ptr.y - stage.y()) / stage.scaleY();
+      const sx = selBoxStart.current.x;
+      const sy = selBoxStart.current.y;
+      const newBox = { x: Math.min(sx, cx), y: Math.min(sy, cy), w: Math.abs(cx - sx), h: Math.abs(cy - sy) };
+      if (newBox.w > 3 || newBox.h > 3) didDrag.current = true;
+      selBoxRef.current = newBox;
+      setSelBox(newBox);
+      return;
+    }
     if (!isPanning.current) return;
     const dx = e.evt.clientX - panOrigin.current.mx;
     const dy = e.evt.clientY - panOrigin.current.my;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) didDrag.current = true;
     setStagePos({ x: panOrigin.current.sx + dx, y: panOrigin.current.sy + dy });
-  }, []);
+  }, [isBoxSelectMode]);
 
-  const handleStagePanEnd = useCallback(() => {
+  const handleMouseUp = useCallback(() => {
+    if (isBoxSelectMode && selBoxStart.current) {
+      const box = selBoxRef.current;
+      selBoxStart.current = null;
+      selBoxRef.current = null;
+      setSelBox(null);
+      if (box && (box.w > 5 || box.h > 5)) {
+        const ids = floorPlanRef.current.objects
+          .filter((obj) =>
+            obj.x < box.x + box.w &&
+            obj.x + obj.width > box.x &&
+            obj.y < box.y + box.h &&
+            obj.y + obj.height > box.y,
+          )
+          .map((obj) => obj.id);
+        if (ids.length > 0) onBoxSelectRef.current(ids);
+      }
+      return;
+    }
     isPanning.current = false;
-  }, []);
+  }, [isBoxSelectMode]);
 
   // Клик по сцене
   const handleStageClick = useCallback((e: Konva.KonvaEventObject<MouseEvent>) => {
     if (didDrag.current) { didDrag.current = false; return; }
+    if (isBoxSelectMode) return; // обрабатывается в mouseUp
     if (e.target !== stageRef.current && e.target.getType() !== 'Stage') return;
     if (isSelectMode) {
-      onSelect(null);
+      onDeselectAll();
     } else {
       const stage = stageRef.current!;
       const ptr = stage.getPointerPosition()!;
@@ -366,10 +426,11 @@ export default function KonvaCanvas({
       const y = (ptr.y - stage.y()) / stage.scaleY();
       onCanvasClick(x, y);
     }
-  }, [isSelectMode, onSelect, onCanvasClick]);
+  }, [isSelectMode, isBoxSelectMode, onDeselectAll, onCanvasClick]);
 
   const tables = floorPlan.objects.filter((o) => o.type === 'table') as TableObject[];
   const decors = floorPlan.objects.filter((o) => o.type !== 'table') as DecorativeObject[];
+  const selectedIdsSet = new Set(selectedIds);
 
   return (
     <div
@@ -401,9 +462,9 @@ export default function KonvaCanvas({
         scaleY={scale}
         x={stagePos.x}
         y={stagePos.y}
-        onMouseDown={handleStagePanStart}
-        onMouseMove={handleStagePanMove}
-        onMouseUp={handleStagePanEnd}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
         onWheel={handleWheel}
         onClick={handleStageClick}
         onTap={handleStageClick}
@@ -421,8 +482,8 @@ export default function KonvaCanvas({
             <DecorShape
               key={obj.id}
               obj={obj}
-              isSelected={selectedId === obj.id}
-              onSelect={() => isSelectMode && onSelect(obj.id)}
+              isSelected={selectedIdsSet.has(obj.id)}
+              onSelect={(shiftKey) => isSelectMode && onSelect(obj.id, shiftKey)}
               onDragEnd={(x, y) => onObjectMove(obj.id, x, y)}
               onTransformEnd={(x, y, w, h, r) => onObjectTransform(obj.id, x, y, w, h, r)}
               draggable={isSelectMode}
@@ -436,8 +497,8 @@ export default function KonvaCanvas({
             <TableShape
               key={obj.id}
               obj={obj}
-              isSelected={selectedId === obj.id}
-              onSelect={() => isSelectMode && onSelect(obj.id)}
+              isSelected={selectedIdsSet.has(obj.id)}
+              onSelect={(shiftKey) => isSelectMode && onSelect(obj.id, shiftKey)}
               onDragEnd={(x, y) => onObjectMove(obj.id, x, y)}
               onTransformEnd={(x, y, w, h, r) => onObjectTransform(obj.id, x, y, w, h, r)}
               draggable={isSelectMode}
@@ -455,6 +516,22 @@ export default function KonvaCanvas({
             rotationSnaps={[0, 45, 90, 135, 180, 225, 270, 315]}
           />
         </Layer>
+
+        {/* Прямоугольник выделения области */}
+        {selBox && (
+          <Layer listening={false}>
+            <Rect
+              x={selBox.x}
+              y={selBox.y}
+              width={selBox.w}
+              height={selBox.h}
+              fill="rgba(59,130,246,0.06)"
+              stroke="#3b82f6"
+              strokeWidth={1 / scale}
+              dash={[6 / scale, 3 / scale]}
+            />
+          </Layer>
+        )}
       </Stage>
     </div>
   );

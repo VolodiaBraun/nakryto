@@ -159,6 +159,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
     enabled: !!restaurant,
     staleTime: 0,
     refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
 
   // Слоты доступности — грузим когда выбран стол
@@ -227,24 +228,26 @@ export default function BookPage({ params }: { params: { slug: string } }) {
     setLockExpiresAt(null);
   };
 
-  const handleTableSelect = async (tableId: string) => {
+  const handleTableSelect = useCallback(async (tableId: string) => {
+    const date = selectedDateRef.current;
+    const prevTableId = selectedTableRef.current;
     // Снять предыдущую блокировку
-    if (selectedTableId && selectedTableId !== tableId) {
-      doUnlock(selectedTableId, selectedDate);
+    if (prevTableId && prevTableId !== tableId) {
+      doUnlock(prevTableId, date);
     }
     setLockError('');
     try {
-      const result: any = await publicApi.lockTable(slug, tableId, selectedDate, lockIdRef.current);
+      const result: any = await publicApi.lockTable(slug, tableId, date, lockIdRef.current);
       setSelectedTableId(tableId);
       setSelectedTime(null);
       setLockExpiresAt(new Date(result.expiresAt));
     } catch (err: any) {
       // Стол заняли между кликом и запросом
-      queryClient.invalidateQueries({ queryKey: ['tableStatuses', slug, selectedDate] });
+      queryClient.invalidateQueries({ queryKey: ['tableStatuses', slug, date] });
       setLockError(err?.message || 'Стол уже выбирается другим гостем');
       setTimeout(() => setLockError(''), 3000);
     }
-  };
+  }, [slug, queryClient, doUnlock]);
 
   const handleTableDeselect = () => {
     if (selectedTableId) doUnlock(selectedTableId, selectedDate);
@@ -580,14 +583,17 @@ export default function BookPage({ params }: { params: { slug: string } }) {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email (необязательно)</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Email
+              </label>
               <input
                 type="email"
                 value={guestForm.email}
                 onChange={(e) => setGuestForm({ ...guestForm, email: e.target.value })}
-                placeholder="ivan@example.com"
+                placeholder="ivan@example.com (рекомендуется)"
                 className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
+              <p className="text-xs text-gray-400 mt-1">Для получения уведомления о брони на email</p>
             </div>
 
             <div>
@@ -611,7 +617,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
               />
               <span className="text-sm text-gray-600">
                 Согласен(а) на{' '}
-                <a href="#" className="text-blue-600 underline">обработку персональных данных</a>{' '}
+                <a href="/personal-data" target="_blank" className="text-blue-600 underline">обработку персональных данных</a>{' '}
                 в соответствии с ФЗ № 152-ФЗ <span className="text-red-500">*</span>
               </span>
             </label>
@@ -630,11 +636,20 @@ export default function BookPage({ params }: { params: { slug: string } }) {
       {/* ── Шаг 2: Успех ── */}
       {step === 2 && booking && (
         <div className="max-w-2xl mx-auto w-full px-4 py-12 text-center">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-4xl">
-            ✅
+          <div className={`w-20 h-20 ${booking.status === 'CONFIRMED' ? 'bg-green-100' : 'bg-amber-100'} rounded-full flex items-center justify-center mx-auto mb-6 text-4xl`}>
+            {booking.status === 'CONFIRMED' ? '✅' : '🕐'}
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Бронь подтверждена!</h2>
-          <p className="text-gray-500 mb-8">Ждём вас в ресторане</p>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">
+            {booking.status === 'CONFIRMED' ? 'Бронь подтверждена!' : 'Заявка принята!'}
+          </h2>
+          <p className="text-gray-500 mb-2">
+            {booking.status === 'CONFIRMED'
+              ? 'Ваш столик забронирован, ждём вас!'
+              : 'Ресторан подтвердит бронь в ближайшее время'}
+          </p>
+          {booking.guestEmail && (
+            <p className="text-sm text-gray-400 mb-8">Письмо с деталями отправлено на {booking.guestEmail}</p>
+          )}
 
           <div className="bg-white border border-gray-200 rounded-2xl p-6 text-left max-w-sm mx-auto mb-6 space-y-3">
             <Row label="Ресторан" value={restaurant.name} />

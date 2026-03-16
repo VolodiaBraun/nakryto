@@ -13,6 +13,8 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { WebsocketModule } from './websocket/websocket.module';
 import { RedisModule } from './redis/redis.module';
 import { SuperAdminModule } from './superadmin/superadmin.module';
+import { TelegramModule } from './telegram/telegram.module';
+import { MaxModule } from './max/max.module';
 
 @Module({
   imports: [
@@ -30,6 +32,8 @@ import { SuperAdminModule } from './superadmin/superadmin.module';
     NotificationsModule,
     WebsocketModule,
     SuperAdminModule,
+    TelegramModule,
+    MaxModule,
   ],
 })
 export class AppModule {}

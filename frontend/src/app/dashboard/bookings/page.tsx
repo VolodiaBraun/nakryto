@@ -40,7 +40,7 @@ export default function BookingsPage() {
   const { data, isLoading } = useQuery<any>({
     queryKey: ['bookings', params],
     queryFn: () => bookingsApi.getAll(params),
-    refetchInterval: 30000,
+    refetchInterval: 10000,
   });
 
   const statusMutation = useMutation({
@@ -165,6 +165,20 @@ export default function BookingsPage() {
             <p className="text-sm text-gray-500 mb-4">
               {formatDateTime(selected.startsAt)} · стол {(selected as any).table?.label}
             </p>
+
+            <div className="text-sm text-gray-500 mb-3 space-y-1">
+              <div>{selected.guestPhone}{selected.guestEmail ? ` · ${selected.guestEmail}` : ''}</div>
+              {(selected as any).confirmedBy && (
+                <div className="text-xs text-green-700 bg-green-50 rounded px-2 py-1">
+                  ✓ Подтвердил: {(selected as any).confirmedBy.name}
+                  {(selected as any).confirmedAt && (
+                    <span className="text-gray-400 ml-1">
+                      {new Date((selected as any).confirmedAt).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
 
             {selected.notes && (
               <div className="bg-gray-50 rounded-lg p-3 mb-4 text-sm text-gray-600">

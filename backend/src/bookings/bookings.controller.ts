@@ -57,8 +57,9 @@ export class BookingsController {
   updateStatus(
     @Param('id') id: string,
     @CurrentUser('restaurantId') restaurantId: string,
+    @CurrentUser('id') userId: string,
     @Body() dto: UpdateBookingStatusDto,
   ) {
-    return this.service.updateStatus(id, restaurantId, dto);
+    return this.service.updateStatus(id, restaurantId, dto, userId);
   }
 }

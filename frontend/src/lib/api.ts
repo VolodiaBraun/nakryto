@@ -265,6 +265,32 @@ export const staffApi = {
     request(`/api/restaurant/staff/${id}`, { method: 'DELETE' }),
 };
 
+// ─── Telegram API ─────────────────────────────────────────────────────────────
+
+export const telegramApi = {
+  setupBot: (token: string, frontendUrl: string) =>
+    request('/api/restaurant/telegram/setup', {
+      method: 'POST',
+      body: JSON.stringify({ token, frontendUrl }),
+    }),
+
+  disableBot: () =>
+    request('/api/restaurant/telegram/disable', { method: 'DELETE' }),
+};
+
+// ─── MAX API ──────────────────────────────────────────────────────────────────
+
+export const maxApi = {
+  setupBot: (token: string) =>
+    request('/api/restaurant/max/setup', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+
+  disableBot: () =>
+    request('/api/restaurant/max/disable', { method: 'DELETE' }),
+};
+
 // ─── SuperAdmin API ───────────────────────────────────────────────────────────
 
 async function superadminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -310,6 +336,14 @@ export const superadminApi = {
     }),
 
   getStats: () => superadminRequest('/api/superadmin/stats'),
+
+  getLandingSettings: () => superadminRequest('/api/superadmin/landing'),
+
+  updateLandingSettings: (data: object) =>
+    superadminRequest('/api/superadmin/landing', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 };
 
 export { ApiError };

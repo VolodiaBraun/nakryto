@@ -7,6 +7,8 @@ import {
   verificationEmail,
   passwordResetEmail,
   newBookingStaffEmail,
+  bookingReceivedGuestEmail,
+  bookingConfirmedGuestEmail,
   newRestaurantSuperAdminEmail,
 } from './email-templates';
 
@@ -79,6 +81,79 @@ export class NotificationsService {
         channel: 'email',
         status: 'sent',
         payload: { to: allEmails, type: 'staff_new_booking' },
+        sentAt: new Date(),
+      },
+    });
+  }
+
+  async notifyGuestBookingReceived(bookingId: string): Promise<void> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { restaurant: true, table: true, hall: true },
+    });
+    if (!booking || !booking.guestEmail) return;
+
+    const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+    const bookingUrl = `${frontendUrl}/booking/${booking.token}`;
+    const { restaurant, table, hall } = booking;
+
+    const html = bookingReceivedGuestEmail(
+      booking,
+      restaurant.name,
+      `№${table.label}`,
+      hall.name,
+      bookingUrl,
+    );
+
+    await this.mailer.send(
+      booking.guestEmail,
+      `Заявка на бронь получена — ${restaurant.name}`,
+      html,
+    );
+
+    await this.prisma.notificationLog.create({
+      data: {
+        bookingId,
+        channel: 'email',
+        status: 'sent',
+        payload: { to: booking.guestEmail, type: 'guest_booking_received' },
+        sentAt: new Date(),
+      },
+    });
+  }
+
+  async notifyGuestBookingConfirmed(bookingId: string): Promise<void> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: { restaurant: true, table: true, hall: true },
+    });
+    if (!booking || !booking.guestEmail) return;
+
+    const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+    const bookingUrl = `${frontendUrl}/booking/${booking.token}`;
+    const { restaurant, table, hall } = booking;
+
+    const html = bookingConfirmedGuestEmail(
+      booking,
+      restaurant.name,
+      restaurant.address ?? null,
+      `№${table.label}`,
+      hall.name,
+      bookingUrl,
+    );
+
+    await this.mailer.send(
+      booking.guestEmail,
+      `Бронь подтверждена — ${restaurant.name}`,
+      html,
+    );
+
+    await this.prisma.notificationLog.create({
+      data: {
+        bookingId,
+        channel: 'email',
+        status: 'sent',
+        payload: { to: booking.guestEmail, type: 'guest_booking_confirmed' },
         sentAt: new Date(),
       },
     });

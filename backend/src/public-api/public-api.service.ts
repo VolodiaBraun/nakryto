@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { DEFAULT_LANDING_SETTINGS } from '../superadmin/landing-defaults';
 import { PrismaService } from '../prisma/prisma.service';
 import { BookingsService } from '../bookings/bookings.service';
 import { BookingGateway } from '../websocket/websocket.gateway';
@@ -64,7 +65,7 @@ export class PublicApiService {
       select: {
         id: true, slug: true, name: true, address: true, phone: true,
         description: true, logoUrl: true, timezone: true,
-        workingHours: true, settings: true,
+        workingHours: true, settings: true, telegramBotActive: true, maxBotActive: true,
       },
     });
     if (!restaurant) throw new NotFoundException('Ресторан не найден');
@@ -143,5 +144,10 @@ export class PublicApiService {
 
   async cancelBooking(token: string) {
     return this.bookingsService.cancelByToken(token);
+  }
+
+  async getLandingSettings() {
+    const row = await this.prisma.siteSettings.findUnique({ where: { id: 'default' } });
+    return { ...DEFAULT_LANDING_SETTINGS, ...(row?.data as object ?? {}) };
   }
 }

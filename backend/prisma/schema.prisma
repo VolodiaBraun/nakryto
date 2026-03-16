@@ -15,6 +15,16 @@ enum Plan {
   PREMIUM
 }
 
+// ─── Настройки сайта (лендинг) ───────────────────────────────────────────────
+
+model SiteSettings {
+  id        String   @id @default("default")
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+
+  @@map("site_settings")
+}
+
 // ─── Супер-администратор SaaS ─────────────────────────────────────────────────
 
 model SuperAdmin {
@@ -41,8 +51,12 @@ model Restaurant {
   workingHours Json     @default("{}")
   // { minBookingHours: 2, maxBookingDays: 30, slotMinutes: 30, bufferMinutes: 30, autoConfirm: true }
   settings     Json     @default("{}")
-  plan         Plan     @default(FREE)
-  isActive     Boolean  @default(true)
+  plan              Plan    @default(FREE)
+  telegramBotToken  String?
+  telegramBotActive Boolean @default(false)
+  maxBotToken       String?
+  maxBotActive      Boolean @default(false)
+  isActive          Boolean @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -70,6 +84,8 @@ model User {
   telegramChatId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  confirmedBookings Booking[] @relation("ConfirmedBy")
 
   @@map("users")
 }
@@ -144,10 +160,12 @@ model Booking {
   table        Table         @relation(fields: [tableId], references: [id])
   hallId       String
   hall         Hall          @relation(fields: [hallId], references: [id])
-  guestName    String
-  guestPhone   String
-  guestEmail   String?
-  guestCount   Int
+  guestName      String
+  guestPhone     String
+  guestEmail     String?
+  guestCount     Int
+  telegramUserId String?
+  maxUserId      String?
   startsAt     DateTime
   endsAt       DateTime
   status       BookingStatus @default(PENDING)
@@ -157,6 +175,9 @@ model Booking {
   token        String        @unique @default(uuid())
   consentGiven Boolean       @default(false)
   consentAt    DateTime?
+  confirmedById String?
+  confirmedBy   User?         @relation("ConfirmedBy", fields: [confirmedById], references: [id])
+  confirmedAt   DateTime?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 

@@ -8,6 +8,12 @@ import { CreateBookingDto } from '../bookings/dto/create-booking.dto';
 export class PublicApiController {
   constructor(private service: PublicApiService) {}
 
+  @Get('landing-settings')
+  @ApiOperation({ summary: 'Публичные настройки лендинга (тарифы)' })
+  getLandingSettings() {
+    return this.service.getLandingSettings();
+  }
+
   @Get(':slug')
   @ApiOperation({ summary: 'Профиль ресторана по slug' })
   getRestaurant(@Param('slug') slug: string) {

@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { authApi } from '@/lib/api';
 import type { User, Restaurant } from '@/types';
 
@@ -39,6 +40,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [restaurant, setRestaurant] = useState<Restaurant | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const queryClient = useQueryClient();
 
   const refreshUser = useCallback(async () => {
     const token = localStorage.getItem('accessToken');
@@ -61,6 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { refreshUser(); }, [refreshUser]);
 
   const login = async (email: string, password: string) => {
+    queryClient.clear();
     const data: any = await authApi.login({ email, password });
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
@@ -69,6 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const register = async (registerData: RegisterData) => {
+    queryClient.clear();
     const data: any = await authApi.register(registerData);
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
@@ -80,6 +84,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try { await authApi.logout(); } catch {}
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    queryClient.clear();
     setUser(null);
     setRestaurant(null);
   };

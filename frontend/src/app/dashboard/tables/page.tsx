@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { hallsApi, bookingsApi, closedPeriodsApi } from '@/lib/api';
+import { hallsApi, bookingsApi, closedPeriodsApi, publicApi } from '@/lib/api';
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, formatDate, formatTime } from '@/lib/utils';
+import { useAuth } from '@/context/AuthContext';
+import { useBookingSocket } from '@/hooks/useBookingSocket';
+import { v4 as uuidv4 } from 'uuid';
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
@@ -22,6 +25,8 @@ const STATUS_FLOW: Record<BookingStatus, BookingStatus[]> = {
 
 export default function TablesPage() {
   const qc = useQueryClient();
+  const { restaurant } = useAuth();
+  const slug = restaurant?.slug ?? '';
 
   // Выбранные: зал, стол
   const [selectedHallId, setSelectedHallId] = useState<string | null>(null);
@@ -29,6 +34,53 @@ export default function TablesPage() {
 
   // Фильтр дат для броней
   const [bookingDate, setBookingDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Locked tables from guests: tableId → expiresAt
+  const [guestLocks, setGuestLocks] = useState<Record<string, string>>({});
+
+  // Admin's own lock (when booking modal is open)
+  const adminLockId = useRef<string>(uuidv4());
+  const adminLockedTable = useRef<{ tableId: string; date: string } | null>(null);
+
+  // WebSocket: track guest locks/unlocks and new bookings
+  const handleLocked = useCallback((data: { tableId: string; expiresAt?: string }) => {
+    setGuestLocks((prev) => ({ ...prev, [data.tableId]: data.expiresAt ?? '' }));
+    qc.invalidateQueries({ queryKey: ['bookings'] });
+  }, [qc]);
+
+  const handleUnlocked = useCallback((data: { tableId: string }) => {
+    setGuestLocks((prev) => { const next = { ...prev }; delete next[data.tableId]; return next; });
+  }, []);
+
+  const handleBookingChange = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ['bookings'] });
+  }, [qc]);
+
+  useBookingSocket(slug, bookingDate, {
+    onBookingCreated: handleBookingChange,
+    onBookingCancelled: handleBookingChange,
+    onTableLocked: handleLocked,
+    onTableUnlocked: handleUnlocked,
+  });
+
+  // Expire stale guest locks client-side
+  useEffect(() => {
+    const id = setInterval(() => {
+      const now = Date.now();
+      setGuestLocks((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const [tableId, expiresAt] of Object.entries(next)) {
+          if (expiresAt && new Date(expiresAt).getTime() < now) {
+            delete next[tableId];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 5000);
+    return () => clearInterval(id);
+  }, []);
 
   // Массовое закрытие
   const [massModal, setMassModal] = useState(false);
@@ -56,7 +108,11 @@ export default function TablesPage() {
   });
 
   const currentHall = (halls as any[]).find((h) => h.id === selectedHallId) ?? halls[0] ?? null;
-  const tables: any[] = currentHall?.tables ?? [];
+  const tables: any[] = [...(currentHall?.tables ?? [])].sort((a, b) => {
+    const na = parseInt(a.label), nb = parseInt(b.label);
+    if (!isNaN(na) && !isNaN(nb)) return na - nb;
+    return a.label.localeCompare(b.label);
+  });
   const selectedTable = tables.find((t) => t.id === selectedTableId) ?? null;
 
   const { data: bookingsData } = useQuery<any>({
@@ -96,8 +152,37 @@ export default function TablesPage() {
 
   const createBooking = useMutation({
     mutationFn: (data: any) => bookingsApi.create(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['bookings'] }); setBookingModal(false); setNewBooking({ date: '', time: '', guestName: '', guestPhone: '+7', guestCount: 2, notes: '' }); },
+    onSuccess: () => {
+      // Unlock after booking created (booking_created WS event will refresh guests)
+      if (adminLockedTable.current) {
+        const { tableId, date } = adminLockedTable.current;
+        publicApi.unlockTable(slug, tableId, date, adminLockId.current).catch(() => {});
+        adminLockedTable.current = null;
+      }
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      setBookingModal(false);
+      setNewBooking({ date: '', time: '', guestName: '', guestPhone: '+7', guestCount: 2, notes: '' });
+    },
   });
+
+  // Lock table when admin opens booking modal
+  const openBookingModal = useCallback((tableId: string, date: string) => {
+    if (!slug || !tableId || !date) return;
+    setBookingModal(true);
+    setNewBooking((prev) => ({ ...prev, date }));
+    // Lock so guests see "someone is booking"
+    publicApi.lockTable(slug, tableId, date, adminLockId.current).catch(() => {});
+    adminLockedTable.current = { tableId, date };
+  }, [slug]);
+
+  const closeBookingModal = useCallback(() => {
+    if (adminLockedTable.current) {
+      const { tableId, date } = adminLockedTable.current;
+      publicApi.unlockTable(slug, tableId, date, adminLockId.current).catch(() => {});
+      adminLockedTable.current = null;
+    }
+    setBookingModal(false);
+  }, [slug]);
 
   const updateBooking = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => bookingsApi.update(id, data),
@@ -239,6 +324,7 @@ export default function TablesPage() {
                 const hasPeriod = (periodsData as any[]).some(
                   (p) => (p.tableId === table.id || p.tableId === null) && new Date(p.endsAt) > new Date(),
                 );
+                const isGuestLocked = !!guestLocks[table.id];
                 return (
                   <button
                     key={table.id}
@@ -246,13 +332,15 @@ export default function TablesPage() {
                     className={`w-full text-left p-3 rounded-xl border transition-all ${
                       isSelected
                         ? 'border-blue-500 bg-blue-50 shadow-sm'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                        : isGuestLocked
+                          ? 'border-amber-300 bg-amber-50 hover:bg-amber-100'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
-                          isSelected ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700'
+                          isSelected ? 'bg-blue-600 text-white' : isGuestLocked ? 'bg-amber-400 text-white' : 'bg-gray-100 text-gray-700'
                         }`}>
                           {table.label}
                         </div>
@@ -264,9 +352,17 @@ export default function TablesPage() {
                           </p>
                         </div>
                       </div>
-                      {hasPeriod && (
-                        <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">закрыт</span>
-                      )}
+                      <div className="flex flex-col items-end gap-1">
+                        {hasPeriod && (
+                          <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full">закрыт</span>
+                        )}
+                        {isGuestLocked && (
+                          <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse inline-block" />
+                            гость выбирает
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </button>
                 );
@@ -290,7 +386,7 @@ export default function TablesPage() {
                 </p>
               </div>
               <button
-                onClick={() => { setBookingModal(true); setNewBooking({ ...newBooking, date: bookingDate }); }}
+                onClick={() => openBookingModal(selectedTable.id, bookingDate)}
                 className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg"
               >
                 + Добавить бронь
@@ -581,7 +677,7 @@ export default function TablesPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-bold text-gray-900">Добавить бронь — Стол {selectedTable.label}</h2>
-              <button onClick={() => setBookingModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
+              <button onClick={closeBookingModal} className="text-gray-400 hover:text-gray-600">✕</button>
             </div>
 
             {createBooking.isError && (
@@ -625,7 +721,7 @@ export default function TablesPage() {
             <p className="text-xs text-gray-400">Длительность брони: 2 часа. Бронь будет создана со статусом «Подтверждена».</p>
 
             <div className="flex gap-3">
-              <button onClick={() => setBookingModal(false)} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">Отмена</button>
+              <button onClick={closeBookingModal} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">Отмена</button>
               <button
                 onClick={handleCreateBooking}
                 disabled={createBooking.isPending || !newBooking.date || !newBooking.time || !newBooking.guestName}

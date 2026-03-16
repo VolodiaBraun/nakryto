@@ -82,7 +82,7 @@ export class RestaurantsService {
         orderBy: { startsAt: 'asc' },
       }),
       this.prisma.table.count({
-        where: { hall: { restaurantId }, isActive: true },
+        where: { hall: { restaurantId, isActive: true }, isActive: true },
       }),
     ]);
 

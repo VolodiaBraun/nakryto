@@ -48,6 +48,16 @@ export class CreateBookingDto {
   @IsEmail({}, { message: 'Некорректный email' })
   guestEmail?: string;
 
+  @ApiPropertyOptional({ example: '123456789', description: 'Telegram user ID (для TWA-броней)' })
+  @IsOptional()
+  @IsString()
+  telegramUserId?: string;
+
+  @ApiPropertyOptional({ example: '987654321', description: 'MAX user ID (для MAX Mini App броней)' })
+  @IsOptional()
+  @IsString()
+  maxUserId?: string;
+
   @ApiPropertyOptional({ example: 'У окна, пожалуйста' })
   @IsOptional()
   @IsString()

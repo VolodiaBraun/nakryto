@@ -1,0 +1,10 @@
+User-agent: *
+Disallow: /book/
+Disallow: /booking/
+Disallow: /dashboard/
+Disallow: /superadmin/
+Disallow: /twa/
+Disallow: /max/
+Allow: /
+
+Sitemap: https://nakryto.ru/sitemap.xml

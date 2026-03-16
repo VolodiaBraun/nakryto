@@ -12,6 +12,8 @@ export interface Restaurant {
   workingHours: WorkingHours;
   settings: RestaurantSettings;
   isActive: boolean;
+  telegramBotActive?: boolean;
+  maxBotActive?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -158,6 +160,8 @@ export interface Booking {
   guestName: string;
   guestPhone: string;
   guestEmail?: string;
+  telegramUserId?: string;
+  maxUserId?: string;
   guestCount: number;
   startsAt: string;
   endsAt: string;

@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { TelegramService } from '../telegram/telegram.service';
+import { MaxService } from '../max/max.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
@@ -19,6 +21,8 @@ export class BookingsService {
     private prisma: PrismaService,
     private gateway: BookingGateway,
     private notifications: NotificationsService,
+    private telegram: TelegramService,
+    private max: MaxService,
   ) {}
 
   private notify(
@@ -65,7 +69,7 @@ export class BookingsService {
     const [items, total] = await Promise.all([
       this.prisma.booking.findMany({
         where,
-        include: { table: true, hall: true },
+        include: { table: true, hall: true, confirmedBy: { select: { id: true, name: true, role: true } } },
         orderBy: { startsAt: 'asc' },
         skip,
         take: Number(limit),
@@ -79,7 +83,7 @@ export class BookingsService {
   async findOne(id: string, restaurantId: string) {
     const booking = await this.prisma.booking.findFirst({
       where: { id, restaurantId },
-      include: { table: true, hall: true, notificationLogs: true },
+      include: { table: true, hall: true, notificationLogs: true, confirmedBy: { select: { id: true, name: true, role: true } } },
     });
 
     if (!booking) throw new NotFoundException('Бронь не найдена');
@@ -101,12 +105,15 @@ export class BookingsService {
       throw new BadRequestException('Необходимо согласие на обработку персональных данных');
     }
 
-    // Проверяем лимит броней для FREE-тарифа (только онлайн-брони)
+    // Проверяем лимит броней для FREE-тарифа и читаем настройки (только онлайн-брони)
+    let autoConfirm = false;
     if (source === 'ONLINE') {
       const restaurant = await this.prisma.restaurant.findUnique({
         where: { id: restaurantId },
-        select: { plan: true },
+        select: { plan: true, settings: true },
       });
+
+      autoConfirm = !!(restaurant?.settings as any)?.autoConfirm;
 
       if (restaurant?.plan === 'FREE') {
         const now = new Date();
@@ -174,10 +181,9 @@ export class BookingsService {
       throw new BadRequestException('Ресторан или стол недоступен в выбранное время');
     }
 
-    // Получаем настройки ресторана
-    const restaurant = await this.prisma.restaurant.findUnique({ where: { id: restaurantId } });
-    const settings = (restaurant?.settings as any) || {};
-    const autoConfirm = settings.autoConfirm !== false;
+    const isTwa = !!dto.telegramUserId;
+    const isMax = !!dto.maxUserId;
+    const isMiniApp = isTwa || isMax;
 
     const booking = await this.prisma.booking.create({
       data: {
@@ -186,8 +192,10 @@ export class BookingsService {
         hallId: table.hallId,
         guestName: dto.guestName,
         guestPhone: dto.guestPhone,
-        guestEmail: dto.guestEmail,
+        guestEmail: dto.guestEmail ?? null,
         guestCount: dto.guestCount,
+        telegramUserId: dto.telegramUserId ?? null,
+        maxUserId: dto.maxUserId ?? null,
         startsAt,
         endsAt,
         status: autoConfirm ? 'CONFIRMED' : 'PENDING',
@@ -201,6 +209,23 @@ export class BookingsService {
 
     this.notify((booking as any).restaurant.slug, booking.startsAt, 'booking_created', booking.tableId);
     this.notifications.notifyStaffNewBooking(booking.id).catch(() => {});
+    if (autoConfirm) {
+      if (isMiniApp) {
+        if (isTwa) this.telegram.notifyBookingConfirmed(booking.id).catch(() => {});
+        if (isMax) this.max.notifyBookingConfirmed(booking.id).catch(() => {});
+        if (dto.guestEmail) this.notifications.notifyGuestBookingConfirmed(booking.id).catch(() => {});
+      } else {
+        this.notifications.notifyGuestBookingConfirmed(booking.id).catch(() => {});
+      }
+    } else {
+      if (isMiniApp) {
+        if (isTwa) this.telegram.notifyBookingReceived(booking.id).catch(() => {});
+        if (isMax) this.max.notifyBookingReceived(booking.id).catch(() => {});
+        if (dto.guestEmail) this.notifications.notifyGuestBookingReceived(booking.id).catch(() => {});
+      } else {
+        this.notifications.notifyGuestBookingReceived(booking.id).catch(() => {});
+      }
+    }
     return booking;
   }
 
@@ -237,14 +262,34 @@ export class BookingsService {
     return updated;
   }
 
-  async updateStatus(id: string, restaurantId: string, dto: UpdateBookingStatusDto) {
+  async updateStatus(id: string, restaurantId: string, dto: UpdateBookingStatusDto, actorId?: string) {
     await this.findOne(id, restaurantId);
+
+    const isConfirming = dto.status === 'CONFIRMED';
 
     const updated = await this.prisma.booking.update({
       where: { id },
-      data: { status: dto.status },
+      data: {
+        status: dto.status,
+        ...(isConfirming && {
+          confirmedById: actorId ?? null,
+          confirmedAt: new Date(),
+        }),
+      },
       include: { table: true, hall: true, restaurant: true },
     });
+
+    if (isConfirming) {
+      const hasMiniApp = (updated as any).telegramUserId || (updated as any).maxUserId;
+      if (hasMiniApp) {
+        if ((updated as any).telegramUserId) this.telegram.notifyBookingConfirmed(updated.id).catch(() => {});
+        if ((updated as any).maxUserId) this.max.notifyBookingConfirmed(updated.id).catch(() => {});
+        if ((updated as any).guestEmail) this.notifications.notifyGuestBookingConfirmed(updated.id).catch(() => {});
+      } else {
+        this.notifications.notifyGuestBookingConfirmed(updated.id).catch(() => {});
+      }
+    }
+
     const event = dto.status === 'CANCELLED' ? 'booking_cancelled' : 'booking_created';
     this.notify((updated as any).restaurant.slug, updated.startsAt, event, updated.tableId);
     return updated;
@@ -288,14 +333,18 @@ export class BookingsService {
     const slotMinutes = settings.slotMinutes || 30;
     const bufferMinutes = settings.bufferMinutes || 30;
     const [openHour, openMin] = daySchedule.open.split(':').map(Number);
-    const [closeHour, closeMin] = daySchedule.close.split(':').map(Number);
+    const [rawCloseHour, closeMin] = daySchedule.close.split(':').map(Number);
+
+    // Если закрытие после полуночи (closeHour < openHour), добавляем 24
+    const closeHour = rawCloseHour < openHour ? rawCloseHour + 24 : rawCloseHour;
 
     const slots: string[] = [];
     let hour = openHour;
     let min = openMin;
 
     while (hour < closeHour || (hour === closeHour && min < closeMin)) {
-      slots.push(`${String(hour).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
+      const displayHour = hour % 24;
+      slots.push(`${String(displayHour).padStart(2, '0')}:${String(min).padStart(2, '0')}`);
       min += slotMinutes;
       if (min >= 60) { hour++; min -= 60; }
     }

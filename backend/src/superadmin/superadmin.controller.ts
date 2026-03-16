@@ -9,6 +9,7 @@ import {
   UseGuards,
   ParseIntPipe,
   DefaultValuePipe,
+  HttpCode,
 } from '@nestjs/common';
 import { SuperAdminService } from './superadmin.service';
 import { SuperAdminJwtGuard } from './guards/superadmin-jwt.guard';
@@ -44,5 +45,18 @@ export class SuperAdminController {
   @Get('stats')
   getStats() {
     return this.superAdminService.getStats();
+  }
+
+  @UseGuards(SuperAdminJwtGuard)
+  @Get('landing')
+  getLandingSettings() {
+    return this.superAdminService.getLandingSettings();
+  }
+
+  @UseGuards(SuperAdminJwtGuard)
+  @Put('landing')
+  @HttpCode(200)
+  updateLandingSettings(@Body() data: object) {
+    return this.superAdminService.updateLandingSettings(data);
   }
 }

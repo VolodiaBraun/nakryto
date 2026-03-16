@@ -51,7 +51,7 @@ export class AuthService {
             maxBookingDays: 30,
             slotMinutes: 30,
             bufferMinutes: 30,
-            autoConfirm: true,
+            autoConfirm: false,
           },
           workingHours: {
             mon: { open: '10:00', close: '22:00', closed: false },

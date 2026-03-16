@@ -13,9 +13,10 @@ interface BookingMapKonvaProps {
   selectedTableId: string | null;
   guestCount: number;
   onTableSelect: (tableId: string) => void;
+  darkMode?: boolean;
 }
 
-const STATUS_COLORS = {
+const STATUS_COLORS_LIGHT = {
   FREE:     { fill: '#dcfce7', stroke: '#4ade80', text: '#166534' },
   BOOKED:   { fill: '#fee2e2', stroke: '#f87171', text: '#991b1b' },
   LOCKED:   { fill: '#fef3c7', stroke: '#fbbf24', text: '#92400e' },
@@ -23,7 +24,15 @@ const STATUS_COLORS = {
   DISABLED: { fill: '#f3f4f6', stroke: '#d1d5db', text: '#9ca3af' },
 };
 
-const DECOR_COLORS: Record<string, { fill: string; stroke: string }> = {
+const STATUS_COLORS_DARK = {
+  FREE:     { fill: '#14532d', stroke: '#4ade80', text: '#86efac' },
+  BOOKED:   { fill: '#450a0a', stroke: '#f87171', text: '#fca5a5' },
+  LOCKED:   { fill: '#451a03', stroke: '#fbbf24', text: '#fde68a' },
+  SELECTED: { fill: '#1e3a5f', stroke: '#60a5fa', text: '#93c5fd' },
+  DISABLED: { fill: '#27272a', stroke: '#3f3f46', text: '#71717a' },
+};
+
+const DECOR_COLORS_LIGHT: Record<string, { fill: string; stroke: string }> = {
   wall:     { fill: '#94a3b8', stroke: '#64748b' },
   column:   { fill: '#d1d5db', stroke: '#9ca3af' },
   bar:      { fill: '#fcd34d', stroke: '#f59e0b' },
@@ -32,6 +41,17 @@ const DECOR_COLORS: Record<string, { fill: string; stroke: string }> = {
   stairs:   { fill: '#e0f2fe', stroke: '#38bdf8' },
   stage:    { fill: '#fce7f3', stroke: '#f472b6' },
   window:   { fill: '#bfdbfe', stroke: '#93c5fd' },
+};
+
+const DECOR_COLORS_DARK: Record<string, { fill: string; stroke: string }> = {
+  wall:     { fill: '#334155', stroke: '#475569' },
+  column:   { fill: '#3f3f46', stroke: '#52525b' },
+  bar:      { fill: '#78350f', stroke: '#f59e0b' },
+  entrance: { fill: '#422006', stroke: '#eab308' },
+  toilet:   { fill: '#3b0764', stroke: '#c084fc' },
+  stairs:   { fill: '#0c4a6e', stroke: '#38bdf8' },
+  stage:    { fill: '#500724', stroke: '#f472b6' },
+  window:   { fill: '#1e3a5f', stroke: '#60a5fa' },
 };
 
 // Склонение: 1 место / 2-4 места / 5+ мест
@@ -56,20 +76,24 @@ function getTableColor(
   isSelected: boolean,
   guestCount: number,
   tagFilter: string | null,
+  darkMode: boolean,
 ) {
-  if (isSelected) return STATUS_COLORS.SELECTED;
-  if (status === 'BOOKED' || status === 'LOCKED') return STATUS_COLORS[status];
-  if (guestCount > table.maxGuests || guestCount < table.minGuests) return STATUS_COLORS.DISABLED;
-  if (tagFilter && !(table.tags ?? []).includes(tagFilter)) return STATUS_COLORS.DISABLED;
-  return STATUS_COLORS.FREE;
+  const C = darkMode ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
+  if (isSelected) return C.SELECTED;
+  if (status === 'BOOKED' || status === 'LOCKED') return C[status];
+  if (guestCount > table.maxGuests || guestCount < table.minGuests) return C.DISABLED;
+  if (tagFilter && !(table.tags ?? []).includes(tagFilter)) return C.DISABLED;
+  return C.FREE;
 }
 
 // ─── Зум-кнопки ───────────────────────────────────────────────────────────────
 
-function ZoomControls({ scale, onZoomIn, onZoomOut, onReset }: {
-  scale: number; onZoomIn: () => void; onZoomOut: () => void; onReset: () => void;
+function ZoomControls({ scale, onZoomIn, onZoomOut, onReset, darkMode }: {
+  scale: number; onZoomIn: () => void; onZoomOut: () => void; onReset: () => void; darkMode?: boolean;
 }) {
-  const btn = 'w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium shadow-sm text-sm';
+  const btn = darkMode
+    ? 'w-8 h-8 flex items-center justify-center rounded-lg bg-zinc-800 border border-zinc-600 text-zinc-200 hover:bg-zinc-700 font-medium shadow-sm text-sm'
+    : 'w-8 h-8 flex items-center justify-center rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 font-medium shadow-sm text-sm';
   return (
     <div className="absolute bottom-3 right-3 z-10 flex flex-col gap-1">
       <button className={btn} onClick={onZoomIn} title="Увеличить">+</button>
@@ -80,8 +104,11 @@ function ZoomControls({ scale, onZoomIn, onZoomOut, onReset }: {
 }
 
 export default function BookingMapKonva({
-  hall, tableStatuses, tableFreeUntil, selectedTableId, guestCount, onTableSelect,
+  hall, tableStatuses, tableFreeUntil, selectedTableId, guestCount, onTableSelect, darkMode = false,
 }: BookingMapKonvaProps) {
+  const DECOR_COLORS = darkMode ? DECOR_COLORS_DARK : DECOR_COLORS_LIGHT;
+  const bgColor = darkMode ? '#1c1c1e' : 'white';
+  const gridColor = darkMode ? '#2c2c2e' : '#f3f4f6';
   const fp = hall.floorPlan || { width: 800, height: 600, objects: [] };
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -174,13 +201,15 @@ export default function BookingMapKonva({
       {/* Фильтр по типу посадки */}
       {activeTags.length > 0 && (
         <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-          <span className="text-xs text-gray-400 mr-0.5">Место:</span>
+          <span className={`text-xs mr-0.5 ${darkMode ? 'text-zinc-400' : 'text-gray-400'}`}>Место:</span>
           <button
             onClick={() => setTagFilter(null)}
             className={`px-2.5 py-0.5 rounded-full text-xs border transition-colors ${
               tagFilter === null
                 ? 'bg-blue-600 text-white border-blue-600'
-                : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                : darkMode
+                  ? 'border-zinc-600 text-zinc-300 hover:bg-zinc-700'
+                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
             }`}
           >
             Все
@@ -192,7 +221,9 @@ export default function BookingMapKonva({
               className={`px-2.5 py-0.5 rounded-full text-xs border transition-colors ${
                 tagFilter === tag.id
                   ? 'bg-blue-600 text-white border-blue-600'
-                  : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+                  : darkMode
+                    ? 'border-zinc-600 text-zinc-300 hover:bg-zinc-700'
+                    : 'border-gray-200 text-gray-600 hover:bg-gray-50'
               }`}
             >
               {tag.icon} {tag.label}
@@ -215,16 +246,16 @@ export default function BookingMapKonva({
           onDragMove={(e) => { didDrag.current = true; setStagePos({ x: e.target.x(), y: e.target.y() }); }}
           onDragEnd={(e) => { setStagePos({ x: e.target.x(), y: e.target.y() }); }}
           onWheel={handleWheel}
-          style={{ background: 'white', display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}
+          style={{ background: bgColor, display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}
         >
           {/* Фон + сетка */}
           <Layer listening={false}>
-            <Rect width={fp.width} height={fp.height} fill="white" />
+            <Rect width={fp.width} height={fp.height} fill={bgColor} />
             {Array.from({ length: Math.floor(fp.width / 40) }).map((_, i) => (
-              <Line key={`v${i}`} points={[(i + 1) * 40, 0, (i + 1) * 40, fp.height]} stroke="#f3f4f6" strokeWidth={1} />
+              <Line key={`v${i}`} points={[(i + 1) * 40, 0, (i + 1) * 40, fp.height]} stroke={gridColor} strokeWidth={1} />
             ))}
             {Array.from({ length: Math.floor(fp.height / 40) }).map((_, i) => (
-              <Line key={`h${i}`} points={[0, (i + 1) * 40, fp.width, (i + 1) * 40]} stroke="#f3f4f6" strokeWidth={1} />
+              <Line key={`h${i}`} points={[0, (i + 1) * 40, fp.width, (i + 1) * 40]} stroke={gridColor} strokeWidth={1} />
             ))}
           </Layer>
 
@@ -259,7 +290,7 @@ export default function BookingMapKonva({
               const isTagFiltered = !!tagFilter && !(table.tags ?? []).includes(tagFilter);
               const isDisabled = guestCount > table.maxGuests || guestCount < table.minGuests || isTagFiltered;
               const isBooked = status === 'BOOKED' || status === 'LOCKED';
-              const colors = getTableColor(table, status, isSelected, guestCount, tagFilter);
+              const colors = getTableColor(table, status, isSelected, guestCount, tagFilter, darkMode);
               const cx = table.width / 2;
               const cy = table.height / 2;
               const freeUntil = tableFreeUntil[table.id];
@@ -335,6 +366,7 @@ export default function BookingMapKonva({
           onZoomIn={() => applyZoom(1.25)}
           onZoomOut={() => applyZoom(0.8)}
           onReset={resetZoom}
+          darkMode={darkMode}
         />
       </div>
 
@@ -349,19 +381,24 @@ export default function BookingMapKonva({
       )}
 
       {/* Легенда */}
-      <div className="flex items-center gap-4 mt-3 text-xs text-gray-500 flex-wrap">
-        {[
+      <div className={`flex items-center gap-4 mt-3 text-xs flex-wrap ${darkMode ? 'text-zinc-400' : 'text-gray-500'}`}>
+        {(darkMode ? [
+          { color: 'bg-green-900 border-green-500', label: 'Свободен' },
+          { color: 'bg-red-900 border-red-500',     label: 'Занят' },
+          { color: 'bg-blue-900 border-blue-500',   label: 'Выбран' },
+          { color: 'bg-zinc-700 border-zinc-500',   label: 'Не подходит' },
+        ] : [
           { color: 'bg-green-100 border-green-400', label: 'Свободен' },
-          { color: 'bg-red-100 border-red-400',   label: 'Занят' },
-          { color: 'bg-blue-100 border-blue-400',  label: 'Выбран' },
-          { color: 'bg-gray-100 border-gray-300',  label: 'Не подходит по вместимости' },
-        ].map((item) => (
+          { color: 'bg-red-100 border-red-400',     label: 'Занят' },
+          { color: 'bg-blue-100 border-blue-400',   label: 'Выбран' },
+          { color: 'bg-gray-100 border-gray-300',   label: 'Не подходит по вместимости' },
+        ]).map((item) => (
           <div key={item.label} className="flex items-center gap-1.5">
             <div className={`w-3.5 h-3.5 rounded border ${item.color}`} />
             <span>{item.label}</span>
           </div>
         ))}
-        <span className="ml-auto text-gray-400">Колёсико / кнопки — масштаб · Зажмите фон — перемещение</span>
+        <span className={`ml-auto ${darkMode ? 'text-zinc-600' : 'text-gray-400'}`}>Зажмите фон — перемещение</span>
       </div>
     </div>
   );

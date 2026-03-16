@@ -19,6 +19,7 @@ interface BookingMapProps {
   selectedTableId: string | null;
   guestCount: number;
   onTableSelect: (tableId: string) => void;
+  darkMode?: boolean;
 }
 
 export default function BookingMap(props: BookingMapProps) {

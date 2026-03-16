@@ -25,6 +25,7 @@ const mToPx  = (m: number)  => Math.round(m * 100);
 
 export type Tool =
   | 'select'
+  | 'select-box'
   | 'table-round'
   | 'table-square'
   | 'table-rectangle'
@@ -46,6 +47,7 @@ interface ToolItem {
 
 const TOOLS: ToolItem[] = [
   { id: 'select',           label: 'Выбор',          icon: '↖',  group: 'select' },
+  { id: 'select-box',       label: 'Выделить область',icon: '⬚', group: 'select' },
   { id: 'table-round',      label: 'Круглый стол',   icon: '⬤',  group: 'table' },
   { id: 'table-square',     label: 'Квадратный стол',icon: '■',  group: 'table' },
   { id: 'table-rectangle',  label: 'Прямоуг. стол',  icon: '▬',  group: 'table' },
@@ -68,17 +70,17 @@ const GROUP_LABELS: Record<string, string> = {
 // ─── Дефолтные размеры (в пикселях = сантиметрах) ────────────────────────────
 
 const DEFAULT_SIZES: Record<string, { width: number; height: number }> = {
-  'table-round':     { width: 80,  height: 80  },  // 80×80 см
-  'table-square':    { width: 80,  height: 80  },  // 80×80 см
-  'table-rectangle': { width: 120, height: 80  },  // 120×80 см
-  wall:              { width: 200, height: 20  },  // 2 м × 20 см
-  window:            { width: 100, height: 15  },  // 1 м × 15 см
-  column:            { width: 40,  height: 40  },  // 40×40 см
-  bar:               { width: 250, height: 60  },  // 2.5 м × 60 см
-  entrance:          { width: 80,  height: 20  },  // 80 см × 20 см
-  toilet:            { width: 120, height: 100 },  // 1.2 м × 1 м
-  stairs:            { width: 120, height: 80  },  // 1.2 м × 80 см
-  stage:             { width: 300, height: 120 },  // 3 м × 1.2 м
+  'table-round':     { width: 80,  height: 80  },
+  'table-square':    { width: 80,  height: 80  },
+  'table-rectangle': { width: 120, height: 80  },
+  wall:              { width: 200, height: 20  },
+  window:            { width: 100, height: 15  },
+  column:            { width: 40,  height: 40  },
+  bar:               { width: 250, height: 60  },
+  entrance:          { width: 80,  height: 20  },
+  toilet:            { width: 120, height: 100 },
+  stairs:            { width: 120, height: 80  },
+  stage:             { width: 300, height: 120 },
 };
 
 const DECOR_LABELS: Record<string, string> = {
@@ -106,18 +108,52 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
   const [floorPlan, setFloorPlan] = useState<FloorPlan>(
     hall.floorPlan || { width: 800, height: 600, objects: [] },
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [clipboard, setClipboard] = useState<FloorPlanObject[]>([]);
   const [activeTool, setActiveTool] = useState<Tool>('select');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [canUndo, setCanUndo] = useState(false);
   const tableCounter = useRef(floorPlan.objects.filter((o) => o.type === 'table').length + 1);
 
-  const selectedObject = floorPlan.objects.find((o) => o.id === selectedId) || null;
+  // ─── Стабильные рефы (для keyboard handler без stale closure) ──────────────
+  const selectedIdsRef = useRef<string[]>([]);
+  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+
+  const clipboardRef = useRef<FloorPlanObject[]>([]);
+  useEffect(() => { clipboardRef.current = clipboard; }, [clipboard]);
+
+  // floorPlanRef — актуальное состояние плана (без stale closure в callbacks)
+  const floorPlanRef = useRef(floorPlan);
+  floorPlanRef.current = floorPlan;
+
+  // История для отмены (Ctrl+Z)
+  const historyRef = useRef<FloorPlan[]>([]);
+  const pushToHistory = (fp: FloorPlan) => {
+    historyRef.current = [...historyRef.current.slice(-49), fp];
+    setCanUndo(true);
+  };
+
+  // ─── Derived ───────────────────────────────────────────────────────────────
+  const selectedId = selectedIds[0] ?? null;
+  const selectedObject = selectedId ? (floorPlan.objects.find((o) => o.id === selectedId) || null) : null;
   const selectedTable = selectedObject?.type === 'table' ? (selectedObject as TableObject) : null;
   const selectedDecor = selectedObject && selectedObject.type !== 'table' ? (selectedObject as DecorativeObject) : null;
 
+  // ─── Select ────────────────────────────────────────────────────────────────
+
+  const handleSelect = useCallback((id: string, shiftKey?: boolean) => {
+    setSelectedIds((prev) =>
+      shiftKey
+        ? prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+        : [id],
+    );
+  }, []);
+
+  // ─── Добавление объекта на холст ───────────────────────────────────────────
+
   const handleCanvasClick = useCallback((x: number, y: number) => {
-    if (activeTool === 'select') return;
+    if (activeTool === 'select' || activeTool === 'select-box') return;
     const size = DEFAULT_SIZES[activeTool] || { width: 80, height: 80 };
     const id = uuidv4();
 
@@ -133,7 +169,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
         minGuests: 1,
         maxGuests: shape === 'RECTANGLE' ? 6 : 4,
       };
-      setFloorPlan((prev) => ({ ...prev, objects: [...prev.objects, newTable] }));
+      setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, newTable] }; });
     } else {
       const newDecor: DecorativeObject = {
         type: activeTool as any, id,
@@ -142,61 +178,146 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
         width: size.width, height: size.height, rotation: 0,
         label: DECOR_LABELS[activeTool] || activeTool,
       };
-      setFloorPlan((prev) => ({ ...prev, objects: [...prev.objects, newDecor] }));
+      setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, newDecor] }; });
     }
-    setSelectedId(id);
+    setSelectedIds([id]);
     setActiveTool('select');
   }, [activeTool]);
 
+  // ─── Перемещение (поддержка группового перемещения) ───────────────────────
+
   const handleObjectMove = useCallback((id: string, x: number, y: number) => {
-    setFloorPlan((prev) => ({
-      ...prev,
-      objects: prev.objects.map((o) => o.id === id ? { ...o, x: Math.round(x), y: Math.round(y) } : o),
-    }));
+    const ids = selectedIdsRef.current;
+    if (ids.length > 1 && ids.includes(id)) {
+      setFloorPlan((prev) => {
+        pushToHistory(prev);
+        const movedObj = prev.objects.find((o) => o.id === id);
+        if (!movedObj) return prev;
+        const dx = Math.round(x) - movedObj.x;
+        const dy = Math.round(y) - movedObj.y;
+        return {
+          ...prev,
+          objects: prev.objects.map((o) =>
+            ids.includes(o.id) ? { ...o, x: Math.round(o.x + dx), y: Math.round(o.y + dy) } : o,
+          ),
+        };
+      });
+    } else {
+      setFloorPlan((prev) => {
+        pushToHistory(prev);
+        return { ...prev, objects: prev.objects.map((o) => o.id === id ? { ...o, x: Math.round(x), y: Math.round(y) } : o) };
+      });
+    }
   }, []);
 
   const handleObjectTransform = useCallback((id: string, x: number, y: number, width: number, height: number, rotation: number) => {
-    setFloorPlan((prev) => ({
-      ...prev,
-      objects: prev.objects.map((o) =>
-        o.id === id ? { ...o, x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height), rotation: Math.round(rotation) } : o,
-      ),
-    }));
+    setFloorPlan((prev) => {
+      pushToHistory(prev);
+      return {
+        ...prev,
+        objects: prev.objects.map((o) =>
+          o.id === id ? { ...o, x: Math.round(x), y: Math.round(y), width: Math.round(width), height: Math.round(height), rotation: Math.round(rotation) } : o,
+        ),
+      };
+    });
   }, []);
 
   const updateSelected = (updates: Partial<FloorPlanObject>) => {
     if (!selectedId) return;
-    setFloorPlan((prev) => ({
-      ...prev,
-      objects: prev.objects.map((o) => o.id === selectedId ? { ...o, ...updates } : o) as any,
-    }));
+    setFloorPlan((prev) => {
+      pushToHistory(prev);
+      return { ...prev, objects: prev.objects.map((o) => o.id === selectedId ? { ...o, ...updates } : o) as any };
+    });
   };
 
   const rotateSelected = (deg: number) => {
     if (!selectedObject) return;
     const cur = selectedObject.rotation || 0;
-    setFloorPlan((prev) => ({
-      ...prev,
-      objects: prev.objects.map((o) => o.id === selectedId ? { ...o, rotation: (cur + deg + 360) % 360 } : o),
-    }));
+    setFloorPlan((prev) => {
+      pushToHistory(prev);
+      return { ...prev, objects: prev.objects.map((o) => o.id === selectedId ? { ...o, rotation: (cur + deg + 360) % 360 } : o) };
+    });
   };
 
-  const deleteSelected = () => {
-    if (!selectedId) return;
-    setFloorPlan((prev) => ({ ...prev, objects: prev.objects.filter((o) => o.id !== selectedId) }));
-    setSelectedId(null);
-  };
+  // ─── Удаление ──────────────────────────────────────────────────────────────
+
+  const deleteSelected = useCallback(() => {
+    const ids = selectedIdsRef.current;
+    if (ids.length === 0) return;
+    setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: prev.objects.filter((o) => !ids.includes(o.id)) }; });
+    setSelectedIds([]);
+  }, []);
+
+  // ─── Копировать / Вставить ─────────────────────────────────────────────────
+
+  // ─── ИСПРАВЛЕНО: используем floorPlanRef вместо setFloorPlan (нельзя вызывать
+  //                setState внутри setState updater)
+  const handleCopy = useCallback(() => {
+    const ids = selectedIdsRef.current;
+    if (ids.length === 0) return;
+    const objs = floorPlanRef.current.objects.filter((o) => ids.includes(o.id));
+    if (objs.length > 0) setClipboard(objs);
+  }, []);
+
+  const handlePaste = useCallback(() => {
+    const cb = clipboardRef.current;
+    if (cb.length === 0) return;
+    const OFFSET = 20;
+    const newObjects: FloorPlanObject[] = cb.map((obj) => {
+      const newId = uuidv4();
+      if (obj.type === 'table') {
+        return { ...obj, id: newId, x: obj.x + OFFSET, y: obj.y + OFFSET, label: String(tableCounter.current++) } as TableObject;
+      }
+      return { ...obj, id: newId, x: obj.x + OFFSET, y: obj.y + OFFSET } as DecorativeObject;
+    });
+    setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, ...newObjects] }; });
+    setSelectedIds(newObjects.map((o) => o.id));
+    setClipboard(newObjects.map((o) => ({ ...o })));
+  }, []);
+
+  // ─── Отмена действия ───────────────────────────────────────────────────────
+
+  const handleUndo = useCallback(() => {
+    if (historyRef.current.length === 0) return;
+    const prev = historyRef.current[historyRef.current.length - 1];
+    historyRef.current = historyRef.current.slice(0, -1);
+    setFloorPlan(prev);
+    setSelectedIds([]);
+    setCanUndo(historyRef.current.length > 0);
+  }, []);
+
+  // Рефы для keyboard handler (избегаем stale closure)
+  const handleCopyRef = useRef(handleCopy);
+  const handlePasteRef = useRef(handlePaste);
+  const handleUndoRef = useRef(handleUndo);
+  handleCopyRef.current = handleCopy;
+  handlePasteRef.current = handlePaste;
+  handleUndoRef.current = handleUndo;
+
+  // ─── Клавиатура ────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
-        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') deleteSelected();
-      }
-      if (e.key === 'Escape') { setSelectedId(null); setActiveTool('select'); }
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+      // Используем e.code (физическая клавиша) — работает при любой раскладке
+      // e.key зависит от раскладки: при русской Ctrl+С → e.key='с', а не 'c'
+      const code = e.code;
+      const ctrl = e.ctrlKey || e.metaKey;
+
+      if (code === 'Delete' || code === 'Backspace') { deleteSelected(); return; }
+      if (code === 'Escape') { setSelectedIds([]); setActiveTool('select'); return; }
+      if (ctrl && code === 'KeyZ') { e.preventDefault(); handleUndoRef.current(); return; }
+      if (ctrl && code === 'KeyC') { e.preventDefault(); handleCopyRef.current(); return; }
+      if (ctrl && code === 'KeyV') { e.preventDefault(); handlePasteRef.current(); return; }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [selectedId]);
+    // document надёжнее window в Next.js / React 18
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [deleteSelected]);
+
+  // ─── Сохранение ────────────────────────────────────────────────────────────
 
   const handleSave = async () => {
     if (!onSave) return;
@@ -241,6 +362,45 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Отменить */}
+          <button
+            onClick={handleUndo}
+            disabled={!canUndo}
+            title="Отменить (Ctrl+Z)"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          >
+            ↩ Отменить
+          </button>
+
+          {/* Копировать / Вставить + подсказка */}
+          <div className="flex items-center gap-1 border-r border-gray-200 pr-2 mr-1">
+            <span className="hidden lg:flex items-center gap-1 text-xs text-gray-400 mr-1 select-none">
+              <kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Shift+клик</kbd>
+              <span>или</span>
+              <kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">⬚</kbd>
+              <span>— выбрать несколько</span>
+            </span>
+            <button
+              onClick={handleCopy}
+              disabled={selectedIds.length === 0}
+              title="Копировать (Ctrl+C)"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <span>📋</span>
+              <span className="hidden sm:inline">Копировать</span>
+              {selectedIds.length > 1 && <span className="bg-blue-100 text-blue-700 rounded-full px-1.5 font-medium">{selectedIds.length}</span>}
+            </button>
+            <button
+              onClick={handlePaste}
+              disabled={clipboard.length === 0}
+              title="Вставить (Ctrl+V)"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            >
+              <span>📌</span>
+              <span className="hidden sm:inline">Вставить</span>
+            </button>
+          </div>
+
           {onPreview && (
             <button onClick={onPreview} className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
               👁 Предпросмотр
@@ -259,7 +419,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Left Toolbar — с подписями */}
+        {/* Left Toolbar */}
         <div className="w-44 bg-white border-r border-gray-200 flex flex-col py-2 overflow-y-auto flex-shrink-0">
           {(['select', 'table', 'decor'] as const).map((group) => {
             const groupTools = TOOLS.filter((t) => t.group === group);
@@ -300,9 +460,11 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
         <div className="flex-1 overflow-hidden relative">
           <KonvaCanvas
             floorPlan={floorPlan}
-            selectedId={selectedId}
+            selectedIds={selectedIds}
             activeTool={activeTool}
-            onSelect={setSelectedId}
+            onSelect={handleSelect}
+            onDeselectAll={() => setSelectedIds([])}
+            onBoxSelect={(ids) => { setSelectedIds(ids); setActiveTool('select'); }}
             onCanvasClick={handleCanvasClick}
             onObjectMove={handleObjectMove}
             onObjectTransform={handleObjectTransform}
@@ -313,9 +475,11 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
         <PropertiesPanel
           selectedTable={selectedTable}
           selectedDecor={selectedDecor}
+          selectedCount={selectedIds.length}
           onUpdate={updateSelected}
           onRotate={rotateSelected}
           onDelete={deleteSelected}
+          onCopy={handleCopy}
           floorPlan={floorPlan}
           onFloorPlanChange={setFloorPlan}
         />
@@ -329,15 +493,26 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
 interface PropertiesPanelProps {
   selectedTable: TableObject | null;
   selectedDecor: DecorativeObject | null;
+  selectedCount: number;
   onUpdate: (u: Partial<FloorPlanObject>) => void;
   onRotate: (d: number) => void;
   onDelete: () => void;
+  onCopy: () => void;
   floorPlan: FloorPlan;
   onFloorPlanChange: (fp: FloorPlan) => void;
 }
 
 function PropertiesPanel(props: PropertiesPanelProps) {
-  const { selectedTable, selectedDecor, onUpdate, onRotate, onDelete, floorPlan, onFloorPlanChange } = props;
+  const { selectedTable, selectedDecor, selectedCount, onUpdate, onRotate, onDelete, onCopy, floorPlan, onFloorPlanChange } = props;
+
+  if (selectedCount > 1) {
+    return (
+      <div className="w-60 bg-white border-l border-gray-200 flex flex-col overflow-y-auto flex-shrink-0">
+        <MultiSelectPanel count={selectedCount} onCopy={onCopy} onDelete={onDelete} />
+      </div>
+    );
+  }
+
   return (
     <div className="w-60 bg-white border-l border-gray-200 flex flex-col overflow-y-auto flex-shrink-0">
       {selectedTable ? (
@@ -347,6 +522,48 @@ function PropertiesPanel(props: PropertiesPanelProps) {
       ) : (
         <CanvasProperties floorPlan={floorPlan} onChange={onFloorPlanChange} />
       )}
+    </div>
+  );
+}
+
+// ─── Панель мульти-выделения ──────────────────────────────────────────────────
+
+function MultiSelectPanel({ count, onCopy, onDelete }: { count: number; onCopy: () => void; onDelete: () => void }) {
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center gap-2">
+        <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-700 font-bold text-sm">
+          {count}
+        </div>
+        <div>
+          <h3 className="font-medium text-gray-900 text-sm">Выбрано объектов</h3>
+          <p className="text-xs text-gray-400">Shift+клик для изменения выбора</p>
+        </div>
+      </div>
+
+      <SectionDivider label="Действия" />
+
+      <button
+        onClick={onCopy}
+        className="w-full flex items-center justify-center gap-2 py-2 px-3 border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-sm font-medium rounded-lg transition-colors"
+      >
+        📋 Копировать ({count})
+      </button>
+      <button
+        onClick={onDelete}
+        className="w-full flex items-center justify-center gap-2 py-2 px-3 border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 text-sm font-medium rounded-lg transition-colors"
+      >
+        🗑 Удалить ({count})
+      </button>
+
+      <SectionDivider label="Горячие клавиши" />
+      <div className="text-xs text-gray-400 space-y-1">
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Ctrl+Z</kbd> — отменить</p>
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Ctrl+C</kbd> — копировать</p>
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Ctrl+V</kbd> — вставить</p>
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Delete</kbd> — удалить всё</p>
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Esc</kbd> — снять выделение</p>
+      </div>
     </div>
   );
 }
@@ -548,6 +765,10 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
 
       <SectionDivider label="Горячие клавиши" />
       <div className="text-xs text-gray-400 space-y-1">
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Ctrl+Z</kbd> — отменить</p>
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Ctrl+C</kbd> — копировать</p>
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Ctrl+V</kbd> — вставить</p>
+        <p><kbd className="bg-white border border-gray-200 px-1 rounded">Shift+клик</kbd> — выбрать несколько</p>
         <p><kbd className="bg-white border border-gray-200 px-1 rounded">Delete</kbd> — удалить объект</p>
         <p><kbd className="bg-white border border-gray-200 px-1 rounded">Esc</kbd> — снять выделение</p>
         <p>Тащите объект мышью для перемещения</p>

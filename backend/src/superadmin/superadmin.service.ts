@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { Plan } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { DEFAULT_LANDING_SETTINGS } from './landing-defaults';
 
 @Injectable()
 export class SuperAdminService {
@@ -49,13 +50,15 @@ export class SuperAdminService {
           slug: true,
           plan: true,
           createdAt: true,
+          telegramBotActive: true,
+          maxBotActive: true,
           users: {
             where: { role: 'OWNER' },
             select: { email: true },
             take: 1,
           },
           _count: {
-            select: { halls: true },
+            select: { halls: { where: { isActive: true } } },
           },
         },
         orderBy: { createdAt: 'desc' },
@@ -89,6 +92,8 @@ export class SuperAdminService {
       ownerEmail: r.users[0]?.email ?? null,
       hallCount: r._count.halls,
       bookings30d: countMap.get(r.id) ?? 0,
+      telegramBotActive: r.telegramBotActive,
+      maxBotActive: r.maxBotActive,
     }));
 
     return { items, total, page, limit };
@@ -127,4 +132,20 @@ export class SuperAdminService {
       perPlan: planCounts,
     };
   }
+
+  async getLandingSettings() {
+    const row = await this.prisma.siteSettings.findUnique({ where: { id: 'default' } });
+    // Мёрджим с дефолтами чтобы новые поля всегда были доступны
+    return { ...DEFAULT_LANDING_SETTINGS, ...(row?.data as object ?? {}) };
+  }
+
+  async updateLandingSettings(data: object) {
+    const row = await this.prisma.siteSettings.upsert({
+      where: { id: 'default' },
+      create: { id: 'default', data: data as any },
+      update: { data: data as any },
+    });
+    return row.data;
+  }
 }
+

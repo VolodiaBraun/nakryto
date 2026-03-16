@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 import { QueryProvider } from '@/context/QueryProvider';
+import CookieBanner from '@/components/CookieBanner';
 
 export const metadata: Metadata = {
   title: 'Накрыто — бронирование столов',
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <QueryProvider>
           <AuthProvider>
             {children}
+            <CookieBanner />
           </AuthProvider>
         </QueryProvider>
       </body>

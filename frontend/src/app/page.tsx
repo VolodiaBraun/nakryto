@@ -1,6 +1,75 @@
 import Link from 'next/link';
 
-export default function LandingPage() {
+export const dynamic = 'force-dynamic';
+
+interface PricingPlan {
+  id: string;
+  name: string;
+  price: string;
+  period: string;
+  highlight: boolean;
+  features: string[];
+}
+
+interface LandingSettings {
+  showPricing: boolean;
+  pricingTitle: string;
+  pricingSubtitle: string;
+  plans: PricingPlan[];
+  supportEmail?: string;
+  privacyPolicy?: string;
+  personalDataPolicy?: string;
+}
+
+const DEFAULT_SETTINGS: LandingSettings = {
+  showPricing: true,
+  pricingTitle: 'Тарифные планы',
+  pricingSubtitle: 'Начните бесплатно, масштабируйтесь по мере роста',
+  plans: [
+    {
+      id: 'free',
+      name: 'Бесплатный',
+      price: '0 ₽',
+      period: '',
+      highlight: false,
+      features: ['1 зал', '50 броней в месяц', 'Карта зала', 'Онлайн-брони'],
+    },
+    {
+      id: 'standard',
+      name: 'Стандарт',
+      price: '990 ₽',
+      period: '/мес',
+      highlight: true,
+      features: ['3 зала', 'Безлимитные брони', 'Все функции Free', 'WebSocket real-time'],
+    },
+    {
+      id: 'premium',
+      name: 'Премиум',
+      price: '2 490 ₽',
+      period: '/мес',
+      highlight: false,
+      features: ['Безлимит залов', 'Безлимитные брони', 'Все функции Стандарт', 'Приоритетная поддержка'],
+    },
+  ],
+};
+
+async function getLandingSettings(): Promise<LandingSettings> {
+  try {
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const res = await fetch(`${apiUrl}/api/public/landing-settings`, {
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return json.data ?? json;
+    }
+  } catch {}
+  return DEFAULT_SETTINGS;
+}
+
+export default async function LandingPage() {
+  const settings = await getLandingSettings();
+
   return (
     <div className="min-h-screen bg-white text-gray-900">
       {/* Навбар */}
@@ -85,81 +154,74 @@ export default function LandingPage() {
       </section>
 
       {/* Тарифы */}
-      <section className="py-20 px-6">
-        <div className="max-w-5xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-3">Тарифные планы</h2>
-          <p className="text-gray-500 text-center mb-12">Начните бесплатно, масштабируйтесь по мере роста</p>
-          <div className="grid md:grid-cols-3 gap-6">
-            {[
-              {
-                name: 'Бесплатный',
-                price: '0 ₽',
-                period: '',
-                highlight: false,
-                features: ['1 зал', '50 броней в месяц', 'Карта зала', 'Онлайн-брони'],
-              },
-              {
-                name: 'Стандарт',
-                price: '990 ₽',
-                period: '/мес',
-                highlight: true,
-                features: ['3 зала', 'Безлимитные брони', 'Все функции Free', 'WebSocket real-time'],
-              },
-              {
-                name: 'Премиум',
-                price: '2 490 ₽',
-                period: '/мес',
-                highlight: false,
-                features: ['Безлимит залов', 'Безлимитные брони', 'Все функции Стандарт', 'Приоритетная поддержка'],
-              },
-            ].map((plan) => (
-              <div
-                key={plan.name}
-                className={`rounded-2xl p-8 border-2 flex flex-col ${
-                  plan.highlight
-                    ? 'border-orange-500 bg-orange-50'
-                    : 'border-gray-100 bg-white'
-                }`}
-              >
-                {plan.highlight && (
-                  <div className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-2">
-                    Популярный
-                  </div>
-                )}
-                <h3 className="text-xl font-bold mb-1">{plan.name}</h3>
-                <div className="text-3xl font-bold mb-6">
-                  {plan.price}
-                  <span className="text-base font-normal text-gray-400">{plan.period}</span>
-                </div>
-                <ul className="space-y-2 mb-8 flex-1">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2 text-sm text-gray-600">
-                      <span className="text-green-500">✓</span>
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <Link
-                  href="/register"
-                  className={`block text-center py-2.5 rounded-xl text-sm font-medium transition-colors ${
+      {settings.showPricing && settings.plans.length > 0 && (
+        <section className="py-20 px-6">
+          <div className="max-w-5xl mx-auto">
+            <h2 className="text-3xl font-bold text-center mb-3">{settings.pricingTitle}</h2>
+            <p className="text-gray-500 text-center mb-12">{settings.pricingSubtitle}</p>
+            <div className={`grid gap-6 ${settings.plans.length === 1 ? 'md:grid-cols-1 max-w-sm mx-auto' : settings.plans.length === 2 ? 'md:grid-cols-2 max-w-2xl mx-auto' : 'md:grid-cols-3'}`}>
+              {settings.plans.map((plan) => (
+                <div
+                  key={plan.id}
+                  className={`rounded-2xl p-8 border-2 flex flex-col ${
                     plan.highlight
-                      ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                      : 'border border-gray-200 hover:border-gray-300 text-gray-700'
+                      ? 'border-orange-500 bg-orange-50'
+                      : 'border-gray-100 bg-white'
                   }`}
                 >
-                  Подключить
-                </Link>
-              </div>
-            ))}
+                  {plan.highlight && (
+                    <div className="text-xs font-semibold text-orange-600 uppercase tracking-wide mb-2">
+                      Популярный
+                    </div>
+                  )}
+                  <h3 className="text-xl font-bold mb-1">{plan.name}</h3>
+                  <div className="text-3xl font-bold mb-6">
+                    {plan.price}
+                    <span className="text-base font-normal text-gray-400">{plan.period}</span>
+                  </div>
+                  <ul className="space-y-2 mb-8 flex-1">
+                    {plan.features.map((f, i) => (
+                      <li key={i} className="flex items-center gap-2 text-sm text-gray-600">
+                        <span className="text-green-500">✓</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                  <Link
+                    href="/register"
+                    className={`block text-center py-2.5 rounded-xl text-sm font-medium transition-colors ${
+                      plan.highlight
+                        ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                        : 'border border-gray-200 hover:border-gray-300 text-gray-700'
+                    }`}
+                  >
+                    Подключить
+                  </Link>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* Футер */}
       <footer className="border-t border-gray-100 py-8 px-6">
-        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-gray-400">
-          <div className="font-semibold text-gray-600">Накрыто</div>
-          <div>© {new Date().getFullYear()} Nakryto. Все права защищены.</div>
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 text-sm text-gray-400">
+          <div>
+            <div className="font-semibold text-gray-600 mb-1">Накрыто</div>
+            <div>© {new Date().getFullYear()} Nakryto. Все права защищены.</div>
+          </div>
+          <div className="flex flex-col sm:items-end gap-1.5">
+            <div className="flex flex-wrap gap-4">
+              <Link href="/privacy" className="hover:text-gray-600 transition-colors">Политика конфиденциальности</Link>
+              <Link href="/personal-data" className="hover:text-gray-600 transition-colors">Обработка персональных данных</Link>
+            </div>
+            {settings.supportEmail && (
+              <a href={`mailto:${settings.supportEmail}`} className="hover:text-gray-600 transition-colors">
+                Поддержка: {settings.supportEmail}
+              </a>
+            )}
+          </div>
         </div>
       </footer>
     </div>

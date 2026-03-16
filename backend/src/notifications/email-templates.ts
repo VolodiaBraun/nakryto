@@ -103,6 +103,111 @@ export function newBookingStaffEmail(booking: {
   `);
 }
 
+export function bookingReceivedGuestEmail(booking: {
+  guestName: string;
+  guestCount: number;
+  startsAt: Date;
+  endsAt: Date;
+  notes?: string | null;
+  token: string;
+}, restaurantName: string, tableName: string, hallName: string, bookingUrl: string): string {
+  const dateStr = booking.startsAt.toLocaleDateString('ru-RU', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const timeStart = booking.startsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const timeEnd = booking.endsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  return wrap(`
+    <h2 style="color:#d97706;">Заявка на бронь получена</h2>
+    <p>Здравствуйте, <strong>${booking.guestName}</strong>!</p>
+    <p>Ваша заявка на столик в <strong>${restaurantName}</strong> получена и находится на рассмотрении. Мы пришлём подтверждение в ближайшее время.</p>
+    <table style="border-collapse:collapse;width:100%;font-size:14px;margin:16px 0;">
+      <tr style="background:#fffbeb;">
+        <td style="padding:10px 14px;border:1px solid #fde68a;font-weight:600;width:40%;">Ресторан</td>
+        <td style="padding:10px 14px;border:1px solid #fde68a;">${restaurantName}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Дата</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${dateStr}</td>
+      </tr>
+      <tr style="background:#f9fafb;">
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Время</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${timeStart} — ${timeEnd}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Стол</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${tableName} · ${hallName}</td>
+      </tr>
+      <tr style="background:#f9fafb;">
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Гостей</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${booking.guestCount}</td>
+      </tr>
+      ${booking.notes ? `
+      <tr>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Пожелания</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${booking.notes}</td>
+      </tr>` : ''}
+    </table>
+    <p style="color:#6b7280;font-size:13px;">Как только ресторан подтвердит бронь, вы получите ещё одно письмо.</p>
+    ${BTN(bookingUrl, 'Посмотреть бронь', '#d97706')}
+  `);
+}
+
+export function bookingConfirmedGuestEmail(booking: {
+  guestName: string;
+  guestCount: number;
+  startsAt: Date;
+  endsAt: Date;
+  notes?: string | null;
+  token: string;
+}, restaurantName: string, restaurantAddress: string | null, tableName: string, hallName: string, bookingUrl: string): string {
+  const dateStr = booking.startsAt.toLocaleDateString('ru-RU', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  });
+  const timeStart = booking.startsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  const timeEnd = booking.endsAt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+
+  return wrap(`
+    <h2 style="color:#16a34a;">Бронь подтверждена!</h2>
+    <p>Здравствуйте, <strong>${booking.guestName}</strong>!</p>
+    <p>Ваша бронь в <strong>${restaurantName}</strong> подтверждена. Ждём вас!</p>
+    <table style="border-collapse:collapse;width:100%;font-size:14px;margin:16px 0;">
+      <tr style="background:#f0fdf4;">
+        <td style="padding:10px 14px;border:1px solid #d1fae5;font-weight:600;width:40%;">Ресторан</td>
+        <td style="padding:10px 14px;border:1px solid #d1fae5;">${restaurantName}</td>
+      </tr>
+      ${restaurantAddress ? `
+      <tr>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Адрес</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${restaurantAddress}</td>
+      </tr>` : ''}
+      <tr style="background:#f9fafb;">
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Дата</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${dateStr}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Время</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${timeStart} — ${timeEnd}</td>
+      </tr>
+      <tr style="background:#f9fafb;">
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Стол</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${tableName} · ${hallName}</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Гостей</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${booking.guestCount}</td>
+      </tr>
+      ${booking.notes ? `
+      <tr style="background:#f9fafb;">
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;font-weight:600;">Пожелания</td>
+        <td style="padding:10px 14px;border:1px solid #e5e7eb;">${booking.notes}</td>
+      </tr>` : ''}
+    </table>
+    ${BTN(bookingUrl, 'Управлять бронью', '#16a34a')}
+    <p style="color:#6b7280;font-size:13px;">По ссылке выше можно отменить бронь если планы изменились.</p>
+  `);
+}
+
 export function newRestaurantSuperAdminEmail(restaurantName: string, ownerName: string, ownerEmail: string, dashboardUrl: string): string {
   return wrap(`
     <h2 style="color:#7c3aed;">Новый ресторан зарегистрирован</h2>

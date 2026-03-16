@@ -26,6 +26,56 @@
   }
 }
 
+/* ─── Telegram Web App ───────────────────────────────────────────────────── */
+
+/* Default CSS variable values (overridden by Telegram theme at runtime) */
+:root {
+  --tg-bg: #ffffff;
+  --tg-text: #111827;
+  --tg-hint: #6b7280;
+  --tg-link: #2563eb;
+  --tg-btn: #2563eb;
+  --tg-btn-text: #ffffff;
+  --tg-secondary-bg: #f3f4f6;
+}
+
+/* Dark scheme overrides */
+[data-twa-scheme="dark"] {
+  --tg-bg: #1c1c1e;
+  --tg-text: #f2f2f7;
+  --tg-hint: #8e8e93;
+  --tg-link: #0a84ff;
+  --tg-btn: #0a84ff;
+  --tg-btn-text: #ffffff;
+  --tg-secondary-bg: #2c2c2e;
+}
+
+.twa-screen {
+  min-height: 100vh;
+  background: var(--tg-bg);
+  color: var(--tg-text);
+}
+
+.twa-input {
+  width: 100%;
+  padding: 0.625rem 1rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  outline: none;
+  transition: box-shadow 0.15s;
+  background: var(--tg-secondary-bg);
+  color: var(--tg-text);
+  border: 1px solid transparent;
+}
+
+.twa-input:focus {
+  box-shadow: 0 0 0 2px var(--tg-btn);
+}
+
+.twa-input::placeholder {
+  color: var(--tg-hint);
+}
+
 @layer utilities {
   .scrollbar-thin {
     scrollbar-width: thin;
