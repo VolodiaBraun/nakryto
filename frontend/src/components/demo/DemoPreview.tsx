@@ -122,18 +122,14 @@ export default function DemoPreview({ floorPlan }: DemoPreviewProps) {
       </div>
 
       <div className="flex-1 px-4 py-3 flex flex-col gap-3">
+
         {/* Date selector */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-gray-600">Дата</span>
-            <span className="text-[10px] text-orange-500 cursor-default group relative">
-              ℹ️ В полной версии — настраиваемые часы
-              <span className="hidden group-hover:block absolute right-0 top-5 bg-gray-800 text-white text-[10px] px-2 py-1 rounded-lg w-44 z-10">
-                Настраивайте часы работы по дням, закрытые периоды и праздники
-              </span>
-            </span>
+        <div className="border border-gray-100 rounded-xl p-3 bg-white shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-700">Дата</span>
+            <Hint text="В полной версии — настраиваемые часы, закрытые дни и праздники" />
           </div>
-          <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <div className="flex gap-1.5 overflow-x-auto pb-0.5">
             {dates.map((d, i) => (
               <button
                 key={i}
@@ -152,16 +148,16 @@ export default function DemoPreview({ floorPlan }: DemoPreviewProps) {
         </div>
 
         {/* Time range info */}
-        <div className="flex items-center gap-2 text-xs text-gray-500 bg-gray-50 rounded-lg px-3 py-2">
+        <div className="border border-gray-100 rounded-xl px-3 py-2.5 bg-white shadow-sm flex items-center gap-2 text-xs text-gray-500">
           <span>🕐</span>
-          <span>Часы приёма броней: <strong>10:00 — 23:00</strong></span>
+          <span>Часы приёма броней: <strong className="text-gray-700">10:00 — 23:00</strong></span>
         </div>
 
         {/* Guest count */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-gray-600">Гостей</span>
-            <span className="text-[10px] text-orange-500">ℹ️ Фильтрует столы по вместимости</span>
+        <div className="border border-gray-100 rounded-xl p-3 bg-white shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-700">Гостей</span>
+            <Hint text="Фильтрует столы по вместимости — серые не подходят по размеру" />
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -181,10 +177,10 @@ export default function DemoPreview({ floorPlan }: DemoPreviewProps) {
         </div>
 
         {/* Map */}
-        <div className="relative">
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-xs font-medium text-gray-600">Выберите стол</span>
-            <span className="text-[10px] text-orange-500">ℹ️ Обновляется в реальном времени</span>
+        <div className="border border-gray-100 rounded-xl p-3 bg-white shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-gray-700">Выберите стол</span>
+            <Hint text="Обновляется в реальном времени — все менеджеры видят изменения мгновенно" />
           </div>
           <BookingMapKonva
             hall={hall}
@@ -237,5 +233,21 @@ export default function DemoPreview({ floorPlan }: DemoPreviewProps) {
         )}
       </div>
     </div>
+  );
+}
+
+// ─── Hint badge with tooltip ──────────────────────────────────────────────────
+
+function Hint({ text }: { text: string }) {
+  return (
+    <span className="group relative flex-shrink-0">
+      <span className="inline-flex items-center gap-1 bg-orange-50 text-orange-600 border border-orange-100 px-2 py-0.5 rounded-full text-[10px] font-medium cursor-default select-none">
+        <span className="text-[11px]">💡</span>
+        В полной версии
+      </span>
+      <span className="hidden group-hover:block absolute right-0 top-6 bg-gray-900 text-white text-[11px] leading-relaxed px-3 py-2 rounded-xl w-52 z-20 shadow-lg">
+        {text}
+      </span>
+    </span>
   );
 }
