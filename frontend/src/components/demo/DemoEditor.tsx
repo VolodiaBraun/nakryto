@@ -268,47 +268,49 @@ export default function DemoEditor({ floorPlan, onChange }: DemoEditorProps) {
         </div>
       )}
 
-      <div className="flex flex-1 overflow-hidden">
-        {/* Left toolbar */}
-        <div className="w-36 bg-white border-r border-gray-200 flex flex-col py-1 overflow-y-auto flex-shrink-0">
-          {(['select', 'table', 'decor'] as const).map((group) => {
-            const groupTools = TOOLS.filter((t) => t.group === group);
-            const groupLabel = group === 'table' ? 'Столы' : group === 'decor' ? 'Элементы' : '';
-            return (
-              <div key={group} className="mb-1">
-                {groupLabel && (
-                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-1.5 pb-0.5">
-                    {groupLabel}
-                  </p>
-                )}
-                {groupTools.map((tool) => (
-                  <button
-                    key={tool.id}
-                    onClick={() => setActiveTool(tool.id)}
-                    className={`w-full flex items-center gap-2 px-2 py-1.5 text-xs transition-colors text-left ${
-                      activeTool === tool.id
-                        ? 'bg-orange-50 text-orange-700 font-medium'
-                        : 'hover:bg-gray-50 text-gray-700'
-                    }`}
-                  >
-                    <span className="text-sm w-4 text-center flex-shrink-0">{tool.icon}</span>
-                    <span className="truncate leading-tight">{tool.label}</span>
-                  </button>
-                ))}
-                {group !== 'decor' && <div className="mx-2 my-0.5 border-b border-gray-100" />}
-              </div>
-            );
-          })}
+      {/* Mobile: "tap to add" hint strip */}
+      {activeTool !== 'select' && activeTool !== 'select-box' && (
+        <div className="md:hidden bg-orange-50 border-b border-orange-100 px-3 py-1 text-[11px] text-orange-700 text-center flex-shrink-0">
+          Нажмите на схему чтобы добавить
+        </div>
+      )}
 
+      {/* Main content: column on mobile, row on desktop */}
+      <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
+
+        {/* Toolbar — horizontal scroll on mobile, vertical column on desktop */}
+        <div className="
+          flex flex-row overflow-x-auto bg-white border-b border-gray-200 flex-shrink-0 px-2 py-1.5 gap-1
+          md:flex-col md:overflow-x-hidden md:overflow-y-auto md:border-b-0 md:border-r md:w-36 md:py-1 md:px-0 md:gap-0
+        ">
+          {TOOLS.map((tool) => (
+            <button
+              key={tool.id}
+              onClick={() => setActiveTool(tool.id)}
+              title={tool.label}
+              className={`
+                flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-colors
+                md:w-full md:rounded-none md:px-2 md:py-1.5
+                ${activeTool === tool.id
+                  ? 'bg-orange-50 text-orange-700 font-medium ring-1 ring-orange-200 md:ring-0'
+                  : 'hover:bg-gray-50 text-gray-700'}
+              `}
+            >
+              <span className="text-base flex-shrink-0 w-5 text-center">{tool.icon}</span>
+              <span className="hidden md:inline truncate leading-tight text-xs">{tool.label}</span>
+            </button>
+          ))}
+
+          {/* Desktop: "click to add" hint */}
           {activeTool !== 'select' && activeTool !== 'select-box' && (
-            <div className="m-2 mt-auto p-2 bg-orange-50 rounded-lg text-[10px] text-orange-700 text-center">
+            <div className="hidden md:block m-2 mt-auto p-2 bg-orange-50 rounded-lg text-[10px] text-orange-700 text-center">
               Кликните на схему
             </div>
           )}
         </div>
 
         {/* Canvas */}
-        <div className="flex-1 overflow-hidden relative">
+        <div className="flex-1 overflow-hidden relative min-h-[220px]">
           <KonvaCanvas
             floorPlan={floorPlan}
             selectedIds={selectedIds}
@@ -322,12 +324,18 @@ export default function DemoEditor({ floorPlan, onChange }: DemoEditorProps) {
           />
         </div>
 
-        {/* Right panel — simplified properties */}
-        <DemoPropertiesPanel
-          selected={floorPlan.objects.find((o) => selectedIds[0] === o.id) ?? null}
-          selectedCount={selectedIds.length}
-          onDelete={deleteSelected}
-        />
+        {/* Properties panel — below canvas on mobile, right column on desktop */}
+        <div className="
+          border-t border-gray-200 bg-white flex-shrink-0 overflow-y-auto
+          md:border-t-0 md:border-l md:w-44
+        ">
+          <DemoPropertiesPanel
+            selected={floorPlan.objects.find((o) => selectedIds[0] === o.id) ?? null}
+            selectedCount={selectedIds.length}
+            onDelete={deleteSelected}
+          />
+        </div>
+
       </div>
     </div>
   );
@@ -344,30 +352,47 @@ function DemoPropertiesPanel({
   selectedCount: number;
   onDelete: () => void;
 }) {
-  return (
-    <div className="w-44 bg-white border-l border-gray-200 flex flex-col overflow-y-auto flex-shrink-0 p-3 gap-3">
-      {selectedCount > 1 ? (
-        <>
-          <p className="text-xs font-semibold text-gray-700">Выбрано: {selectedCount}</p>
-          <button onClick={onDelete} className="w-full py-1.5 text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100">
-            🗑 Удалить ({selectedCount})
-          </button>
-        </>
-      ) : selected && selected.type === 'table' ? (
+  // На мобайле — горизонтальный компактный вид, на десктопе — вертикальный
+  if (selectedCount > 1) {
+    return (
+      <div className="p-3 flex items-center gap-3 md:flex-col md:items-stretch md:gap-3">
+        <p className="text-xs font-semibold text-gray-700 flex-shrink-0">Выбрано: {selectedCount}</p>
+        <button onClick={onDelete} className="py-1.5 px-3 text-xs bg-red-50 text-red-600 border border-red-200 rounded-lg hover:bg-red-100">
+          🗑 Удалить ({selectedCount})
+        </button>
+      </div>
+    );
+  }
+
+  if (selected && selected.type === 'table') {
+    return (
+      <div className="p-3">
         <TableProps table={selected as TableObject} />
-      ) : (
-        <div className="text-xs text-gray-400 space-y-2">
-          <p className="font-medium text-gray-600">Горячие клавиши</p>
-          <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Ctrl+Z</kbd> отменить</p>
-          <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Ctrl+C/V</kbd> копировать</p>
-          <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Delete</kbd> удалить</p>
-          <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Shift+клик</kbd> несколько</p>
-          <div className="pt-2 border-t border-gray-100">
-            <p className="text-orange-500 font-medium text-[10px]">💡 В полной версии</p>
-            <p className="text-[10px] mt-1">Теги посадки, несколько залов, настройки вместимости</p>
-          </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-3">
+      {/* Mobile: compact horizontal shortcuts */}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 md:hidden text-[11px] text-gray-400">
+        <span className="font-medium text-gray-500 w-full">Горячие клавиши:</span>
+        <span><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Ctrl+Z</kbd> отмена</span>
+        <span><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Del</kbd> удалить</span>
+        <span><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Ctrl+C/V</kbd> копировать</span>
+      </div>
+      {/* Desktop: full shortcuts */}
+      <div className="hidden md:block text-xs text-gray-400 space-y-2">
+        <p className="font-medium text-gray-600">Горячие клавиши</p>
+        <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Ctrl+Z</kbd> отменить</p>
+        <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Ctrl+C/V</kbd> копировать</p>
+        <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Delete</kbd> удалить</p>
+        <p><kbd className="bg-gray-100 border border-gray-200 px-1 rounded text-[10px]">Shift+клик</kbd> несколько</p>
+        <div className="pt-2 border-t border-gray-100">
+          <p className="text-orange-500 font-medium text-[10px]">💡 В полной версии</p>
+          <p className="text-[10px] mt-1">Теги посадки, несколько залов, настройки вместимости</p>
         </div>
-      )}
+      </div>
     </div>
   );
 }

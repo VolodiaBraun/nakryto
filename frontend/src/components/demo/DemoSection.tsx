@@ -72,7 +72,7 @@ export default function DemoSection() {
                 Демо · макс. 15 объектов
               </span>
             </div>
-            <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white" style={{ height: 520 }}>
+            <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white h-[640px] md:h-[520px]">
               <DemoEditor floorPlan={floorPlan} onChange={handleChange} />
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">
@@ -90,7 +90,7 @@ export default function DemoSection() {
                 Так видит ваш клиент
               </span>
             </div>
-            <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white" style={{ height: 520 }}>
+            <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white h-[640px] md:h-[520px]">
               <DemoPreview floorPlan={floorPlan} />
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">
