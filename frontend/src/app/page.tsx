@@ -1,4 +1,7 @@
 import Link from 'next/link';
+import dynamicImport from 'next/dynamic';
+
+const DemoSection = dynamicImport(() => import('@/components/demo/DemoSection'), { ssr: false });
 
 export const dynamic = 'force-dynamic';
 
@@ -152,6 +155,9 @@ export default async function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* Интерактивное демо */}
+      <DemoSection />
 
       {/* Тарифы */}
       {settings.showPricing && settings.plans.length > 0 && (
