@@ -104,7 +104,7 @@ export default function DemoPreview({ floorPlan }: DemoPreviewProps) {
   const selectedTable = hall.tables.find((t) => t.id === selectedTableId);
 
   return (
-    <div className="flex flex-col h-full bg-white overflow-y-auto">
+    <div className="flex flex-col bg-white">
       {/* Mock restaurant header */}
       <div className="px-4 pt-4 pb-2 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center justify-between">

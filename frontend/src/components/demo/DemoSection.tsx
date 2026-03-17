@@ -90,7 +90,7 @@ export default function DemoSection() {
                 Так видит ваш клиент
               </span>
             </div>
-            <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white h-[640px] md:h-[520px]">
+            <div className="border border-gray-200 rounded-2xl overflow-hidden shadow-sm bg-white">
               <DemoPreview floorPlan={floorPlan} />
             </div>
             <p className="text-xs text-gray-400 mt-2 text-center">
