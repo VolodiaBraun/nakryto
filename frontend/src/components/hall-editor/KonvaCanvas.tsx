@@ -262,7 +262,7 @@ export default function KonvaCanvas({
   const onBoxSelectRef  = useRef(onBoxSelect);
   onBoxSelectRef.current = onBoxSelect;
 
-  const [containerSize, setContainerSize] = useState({ w: 900, h: 600 });
+  const [containerSize, setContainerSize] = useState({ w: 0, h: 0 });
   const [scale, setScale]       = useState(0.9);
   const [stagePos, setStagePos] = useState({ x: RULER + 16, y: RULER + 16 });
 

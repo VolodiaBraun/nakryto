@@ -118,8 +118,8 @@ export default function BookingMapKonva({
   const [tagFilter, setTagFilter]     = useState<string | null>(null);
   const [hoveredId, setHoveredId]     = useState<string | null>(null);
   const [tooltip, setTooltip]         = useState<{ x: number; y: number; text: string } | null>(null);
-  const [containerW, setContainerW]   = useState(700);
-  const [containerH, setContainerH]  = useState(400); // фиксированная высота окна
+  const [containerW, setContainerW]   = useState(0);
+  const [containerH, setContainerH]  = useState(0);
   const [scale, setScale]             = useState(1);
   const [stagePos, setStagePos]       = useState({ x: 0, y: 0 });
 
