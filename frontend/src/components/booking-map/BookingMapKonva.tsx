@@ -195,6 +195,11 @@ export default function BookingMapKonva({
     onTableSelect(table.id);
   }, [tableStatuses, guestCount, tagFilter, onTableSelect]);
 
+  // Ждём реального измерения контейнера
+  if (containerW === 0) {
+    return <div ref={containerRef} className="relative w-full min-h-[200px]" />;
+  }
+
   return (
     <div ref={containerRef} className="relative w-full">
 

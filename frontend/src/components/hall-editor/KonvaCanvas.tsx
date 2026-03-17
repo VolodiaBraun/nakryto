@@ -432,6 +432,11 @@ export default function KonvaCanvas({
   const decors = floorPlan.objects.filter((o) => o.type !== 'table') as DecorativeObject[];
   const selectedIdsSet = new Set(selectedIds);
 
+  // Ждём реального измерения контейнера
+  if (containerSize.w === 0) {
+    return <div ref={containerRef} className="w-full h-full" />;
+  }
+
   return (
     <div
       ref={containerRef}
