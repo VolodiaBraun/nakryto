@@ -26,7 +26,6 @@ function PanelLoader({ label }: { label: string }) {
 }
 
 export default function DemoSection() {
-  const [activeTab, setActiveTab]     = useState<'editor' | 'preview'>('editor');
   const [floorPlan, setFloorPlan]     = useState<FloorPlan>(DEMO_INITIAL_FLOOR_PLAN);
   const [hasInteracted, setHasInteracted] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -62,28 +61,11 @@ export default function DemoSection() {
           </p>
         </div>
 
-        {/* Mobile tabs */}
-        <div className="flex md:hidden border border-gray-200 rounded-xl p-1 mb-4 bg-white shadow-sm">
-          {(['editor', 'preview'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 py-2 text-sm font-medium rounded-lg transition-colors ${
-                activeTab === tab
-                  ? 'bg-orange-500 text-white shadow-sm'
-                  : 'text-gray-600 hover:bg-gray-50'
-              }`}
-            >
-              {tab === 'editor' ? '✏️ Редактор зала' : '👁 Вид гостя'}
-            </button>
-          ))}
-        </div>
-
-        {/* Two-panel layout */}
-        <div className="grid md:grid-cols-2 gap-5">
+        {/* Vertical panels */}
+        <div className="flex flex-col gap-6">
 
           {/* Editor */}
-          <div className={activeTab === 'preview' ? 'hidden md:flex md:flex-col' : 'flex flex-col'}>
+          <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-gray-700">✏️ Редактор зала</h3>
               <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
@@ -101,7 +83,7 @@ export default function DemoSection() {
           </div>
 
           {/* Preview */}
-          <div className={activeTab === 'editor' ? 'hidden md:flex md:flex-col' : 'flex flex-col'}>
+          <div>
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-sm font-semibold text-gray-700">👁 Вид гостя</h3>
               <span className="text-xs text-orange-600 bg-orange-50 border border-orange-100 px-2 py-0.5 rounded-full">

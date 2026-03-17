@@ -124,6 +124,9 @@ export default async function LandingPage() {
         </div>
       </section>
 
+      {/* Интерактивное демо */}
+      <DemoSection />
+
       {/* Возможности */}
       <section className="py-20 bg-gray-50 px-6">
         <div className="max-w-5xl mx-auto">
@@ -155,9 +158,6 @@ export default async function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* Интерактивное демо */}
-      <DemoSection />
 
       {/* Тарифы */}
       {settings.showPricing && settings.plans.length > 0 && (
