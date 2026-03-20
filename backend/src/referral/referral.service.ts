@@ -11,7 +11,7 @@ import { randomBytes } from 'crypto';
 export class ReferralService {
   constructor(private prisma: PrismaService) {}
 
-  private generateCode(): string {
+  private genRandomCode(): string {
     return randomBytes(4).toString('hex').toUpperCase();
   }
 
@@ -97,7 +97,7 @@ export class ReferralService {
     let code: string;
     let attempts = 0;
     do {
-      code = this.generateCode();
+      code = this.genRandomCode();
       attempts++;
       if (attempts > 10) throw new ConflictException('Не удалось сгенерировать код, попробуйте ещё раз');
       const exists = await this.prisma.user.findUnique({ where: { referralCode: code } });
