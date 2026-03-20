@@ -85,7 +85,23 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // ─── Реферальная программа ───────────────────────────────────────────────
+  referralCode             String?  @unique
+  referralBalance          Decimal  @default(0) @db.Decimal(10,2)
+  pendingReferralCode      String?  // последний реф-код (last-touch атрибуция)
+  referredByUserId         String?  // блокируется при первой оплате
+  referralDiscountUsed     Boolean  @default(false)
+  // Особые условия от суперадмина
+  customReferralConditions Boolean  @default(false)
+  customCommissionRate     Decimal? @db.Decimal(5,2)
+  customDiscountRate       Decimal? @db.Decimal(5,2)
+
   confirmedBookings Booking[] @relation("ConfirmedBy")
+  referredByUser    User?     @relation("UserReferrals", fields: [referredByUserId], references: [id])
+  referredUsers     User[]    @relation("UserReferrals")
+  referralTransactionsAsReferrer ReferralTransaction[] @relation("ReferrerTransactions")
+  referralTransactionsAsReferral ReferralTransaction[] @relation("ReferralTransactions")
+  referralWithdrawals            ReferralWithdrawal[]
 
   @@map("users")
 }
@@ -219,6 +235,48 @@ model ClosedPeriod {
   createdAt    DateTime   @default(now())
 
   @@map("closed_periods")
+}
+
+// ─── Реферальные транзакции ───────────────────────────────────────────────────
+
+model ReferralTransaction {
+  id               String   @id @default(uuid())
+  referrerId       String
+  referrer         User     @relation("ReferrerTransactions", fields: [referrerId], references: [id])
+  referralUserId   String
+  referralUser     User     @relation("ReferralTransactions", fields: [referralUserId], references: [id])
+  paymentAmount    Decimal  @db.Decimal(10,2)
+  commissionRate   Decimal  @db.Decimal(5,2)
+  commissionAmount Decimal  @db.Decimal(10,2)
+  planName         String
+  isFirstPayment   Boolean  @default(false)
+  discountRate     Decimal? @db.Decimal(5,2)
+  createdAt        DateTime @default(now())
+
+  @@map("referral_transactions")
+}
+
+// ─── Заявки на вывод реферального баланса ─────────────────────────────────────
+
+model ReferralWithdrawal {
+  id             String           @id @default(uuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id])
+  amount         Decimal          @db.Decimal(10,2)
+  status         WithdrawalStatus @default(PENDING)
+  paymentDetails String?
+  adminNote      String?
+  processedAt    DateTime?
+  createdAt      DateTime         @default(now())
+
+  @@map("referral_withdrawals")
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  REJECTED
 }
 
 // ─── Лог уведомлений ─────────────────────────────────────────────────────────

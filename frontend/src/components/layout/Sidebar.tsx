@@ -17,6 +17,7 @@ const navItems = [
   { href: '/dashboard/halls', label: 'Залы и схемы', icon: '🗺️' },
   { href: '/dashboard/tables', label: 'Столы', icon: '🪑' },
   { href: '/dashboard/staff', label: 'Сотрудники', icon: '👥', roles: ['OWNER'] as string[] },
+  { href: '/dashboard/referral', label: 'Рефералы', icon: '🤝', roles: ['OWNER'] as string[] },
   { href: '/dashboard/settings', label: 'Настройки', icon: '⚙️', roles: ['OWNER'] as string[] },
 ];
 

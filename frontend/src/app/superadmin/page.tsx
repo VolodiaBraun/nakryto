@@ -56,7 +56,38 @@ interface LandingSettings {
   personalDataPolicy?: string;
 }
 
-type Tab = 'restaurants' | 'landing' | 'content';
+type Tab = 'restaurants' | 'landing' | 'content' | 'referrers' | 'withdrawals';
+
+interface Referrer {
+  id: string;
+  name: string;
+  email: string;
+  restaurantName?: string;
+  referralCode: string | null;
+  balance: number;
+  totalPaid: number;
+  referredCount: number;
+  transactionCount: number;
+  customReferralConditions: boolean;
+  customCommissionRate: number | null;
+  customDiscountRate: number | null;
+}
+
+interface Withdrawal {
+  id: string;
+  amount: number;
+  status: string;
+  paymentDetails?: string;
+  adminNote?: string;
+  processedAt?: string;
+  createdAt: string;
+  user: { name: string; email: string; restaurant?: { name: string } };
+}
+
+interface ReferralSettings {
+  referralDiscountPercent: number;
+  referralCommissionPercent: number;
+}
 
 export default function SuperAdminPage() {
   const { logout } = useSuperAdmin();
@@ -71,6 +102,21 @@ export default function SuperAdminPage() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [updatingPlan, setUpdatingPlan] = useState<string | null>(null);
+
+  // ─── Реферальная программа ─────────────────────────────────────────────────
+  const [referralSettings, setReferralSettings] = useState<ReferralSettings | null>(null);
+  const [referralSaving, setReferralSaving] = useState(false);
+  const [referralSaved, setReferralSaved] = useState(false);
+  const [referrers, setReferrers] = useState<Referrer[]>([]);
+  const [referrersTotal, setReferrersTotal] = useState(0);
+  const [referrersLoading, setReferrersLoading] = useState(false);
+  const [referrersSearch, setReferrersSearch] = useState('');
+  const [editingReferrer, setEditingReferrer] = useState<Referrer | null>(null);
+  const [withdrawals, setWithdrawals] = useState<Withdrawal[]>([]);
+  const [withdrawalsTotal, setWithdrawalsTotal] = useState(0);
+  const [withdrawalsLoading, setWithdrawalsLoading] = useState(false);
+  const [withdrawalStatusFilter, setWithdrawalStatusFilter] = useState('');
+  const [processingWithdrawal, setProcessingWithdrawal] = useState<string | null>(null);
 
   // ─── Лендинг ───────────────────────────────────────────────────────────────
   const [landingSettings, setLandingSettings] = useState<LandingSettings | null>(null);
@@ -124,6 +170,68 @@ export default function SuperAdminPage() {
   useEffect(() => {
     if (activeTab === 'landing' || activeTab === 'content') loadLandingSettings();
   }, [activeTab, loadLandingSettings]);
+
+  const loadReferralSettings = useCallback(async () => {
+    if (referralSettings) return;
+    try {
+      const data = await superadminApi.getReferralSettings() as ReferralSettings;
+      setReferralSettings(data);
+    } catch (err) { handleAuthError(err); }
+  }, [referralSettings, handleAuthError]);
+
+  const loadReferrers = useCallback(async () => {
+    setReferrersLoading(true);
+    try {
+      const data = await superadminApi.getReferrers({ search: referrersSearch || undefined }) as any;
+      setReferrers(data.items);
+      setReferrersTotal(data.total);
+    } catch (err) { handleAuthError(err); } finally { setReferrersLoading(false); }
+  }, [referrersSearch, handleAuthError]);
+
+  const loadWithdrawals = useCallback(async () => {
+    setWithdrawalsLoading(true);
+    try {
+      const data = await superadminApi.getWithdrawals({ status: withdrawalStatusFilter || undefined }) as any;
+      setWithdrawals(data.items);
+      setWithdrawalsTotal(data.total);
+    } catch (err) { handleAuthError(err); } finally { setWithdrawalsLoading(false); }
+  }, [withdrawalStatusFilter, handleAuthError]);
+
+  useEffect(() => {
+    if (activeTab === 'referrers') { loadReferralSettings(); loadReferrers(); }
+    if (activeTab === 'withdrawals') loadWithdrawals();
+  }, [activeTab, loadReferralSettings, loadReferrers, loadWithdrawals]);
+
+  async function handleSaveReferralSettings() {
+    if (!referralSettings) return;
+    setReferralSaving(true);
+    try {
+      await superadminApi.updateReferralSettings(referralSettings);
+      setReferralSaved(true);
+      setTimeout(() => setReferralSaved(false), 2000);
+    } catch (err) { handleAuthError(err); } finally { setReferralSaving(false); }
+  }
+
+  async function handleSaveReferrerConditions() {
+    if (!editingReferrer) return;
+    try {
+      await superadminApi.updateReferrerConditions(editingReferrer.id, {
+        customReferralConditions: editingReferrer.customReferralConditions,
+        customCommissionRate: editingReferrer.customCommissionRate,
+        customDiscountRate: editingReferrer.customDiscountRate,
+      });
+      setReferrers((prev) => prev.map((r) => r.id === editingReferrer.id ? editingReferrer : r));
+      setEditingReferrer(null);
+    } catch (err) { handleAuthError(err); }
+  }
+
+  async function handleWithdrawalAction(id: string, status: string, adminNote?: string) {
+    setProcessingWithdrawal(id);
+    try {
+      await superadminApi.updateWithdrawal(id, { status, adminNote });
+      await loadWithdrawals();
+    } catch (err) { handleAuthError(err); } finally { setProcessingWithdrawal(null); }
+  }
 
   async function handlePlanChange(id: string, plan: string) {
     setUpdatingPlan(id);
@@ -224,7 +332,7 @@ export default function SuperAdminPage() {
         <div className="flex items-center gap-6">
           <div className="text-sm font-semibold text-orange-400">Накрыто — Суперадмин</div>
           <nav className="flex gap-1">
-            {([['restaurants', 'Рестораны'], ['landing', 'Лендинг'], ['content', 'Контент']] as [Tab, string][]).map(([id, label]) => (
+            {([['restaurants', 'Рестораны'], ['landing', 'Лендинг'], ['content', 'Контент'], ['referrers', 'Рефералы'], ['withdrawals', 'Выводы']] as [Tab, string][]).map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
@@ -437,6 +545,224 @@ export default function SuperAdminPage() {
                 </div>
               </>
             ) : null}
+          </div>
+        )}
+
+        {/* ─── Вкладка: Рефералы ───────────────────────────────────────────── */}
+        {activeTab === 'referrers' && (
+          <div className="space-y-6">
+            {/* Глобальные настройки */}
+            <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="font-semibold">Глобальные условия реферальной программы</h2>
+                <button
+                  onClick={handleSaveReferralSettings}
+                  disabled={referralSaving}
+                  className="px-4 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg transition-colors"
+                >
+                  {referralSaved ? '✓ Сохранено' : referralSaving ? 'Сохранение...' : 'Сохранить'}
+                </button>
+              </div>
+              {referralSettings && (
+                <div className="grid grid-cols-2 gap-6 max-w-md">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Скидка для рефералов (%)</label>
+                    <input
+                      type="number"
+                      min={0} max={100}
+                      value={referralSettings.referralDiscountPercent}
+                      onChange={(e) => setReferralSettings((prev) => prev ? { ...prev, referralDiscountPercent: Number(e.target.value) } : prev)}
+                      className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">На первую покупку тарифа</p>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Комиссия реферёру (%)</label>
+                    <input
+                      type="number"
+                      min={0} max={100}
+                      value={referralSettings.referralCommissionPercent}
+                      onChange={(e) => setReferralSettings((prev) => prev ? { ...prev, referralCommissionPercent: Number(e.target.value) } : prev)}
+                      className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                    <p className="text-xs text-gray-500 mt-1">От каждого платежа реферала</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Список реферёров */}
+            <div>
+              <div className="flex items-center gap-3 mb-4">
+                <input
+                  type="text"
+                  placeholder="Поиск по имени, email, коду..."
+                  value={referrersSearch}
+                  onChange={(e) => setReferrersSearch(e.target.value)}
+                  className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3.5 py-2 w-72 focus:outline-none focus:ring-2 focus:ring-orange-500 placeholder-gray-500"
+                />
+                <button onClick={loadReferrers} className="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                  Обновить
+                </button>
+                <div className="text-gray-500 text-sm">{referrersTotal} реферёров</div>
+              </div>
+
+              <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase tracking-wide">
+                      <th className="text-left px-4 py-3">Реферёр</th>
+                      <th className="text-left px-4 py-3">Код</th>
+                      <th className="text-center px-4 py-3">Рефералов</th>
+                      <th className="text-center px-4 py-3">Баланс</th>
+                      <th className="text-center px-4 py-3">Выплачено</th>
+                      <th className="text-center px-4 py-3">Условия</th>
+                      <th className="text-left px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {referrersLoading ? (
+                      <tr><td colSpan={7} className="text-center py-12 text-gray-500">Загрузка...</td></tr>
+                    ) : referrers.length === 0 ? (
+                      <tr><td colSpan={7} className="text-center py-12 text-gray-500">Нет реферёров</td></tr>
+                    ) : referrers.map((r) => (
+                      <tr key={r.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                        <td className="px-4 py-3">
+                          <div className="font-medium text-white">{r.name}</div>
+                          <div className="text-gray-500 text-xs">{r.email}</div>
+                          {r.restaurantName && <div className="text-gray-600 text-xs">{r.restaurantName}</div>}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-orange-400">{r.referralCode || '—'}</td>
+                        <td className="px-4 py-3 text-center text-gray-300">{r.referredCount}</td>
+                        <td className="px-4 py-3 text-center text-green-400 font-medium">{r.balance.toFixed(0)} ₽</td>
+                        <td className="px-4 py-3 text-center text-gray-400">{r.totalPaid.toFixed(0)} ₽</td>
+                        <td className="px-4 py-3 text-center">
+                          {r.customReferralConditions ? (
+                            <span className="text-xs bg-purple-500/20 text-purple-400 px-2 py-0.5 rounded-full">
+                              Особые
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-600">Глобальные</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => setEditingReferrer({ ...r })}
+                            className="text-xs px-2.5 py-1 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                          >
+                            Изменить
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── Вкладка: Выводы ─────────────────────────────────────────────── */}
+        {activeTab === 'withdrawals' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <select
+                value={withdrawalStatusFilter}
+                onChange={(e) => setWithdrawalStatusFilter(e.target.value)}
+                className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="">Все статусы</option>
+                <option value="PENDING">Ожидают</option>
+                <option value="PROCESSING">В обработке</option>
+                <option value="COMPLETED">Выплачены</option>
+                <option value="REJECTED">Отклонены</option>
+              </select>
+              <button onClick={loadWithdrawals} className="text-xs px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors">
+                Обновить
+              </button>
+              <div className="text-gray-500 text-sm">{withdrawalsTotal} заявок</div>
+            </div>
+
+            <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-gray-800 text-gray-400 text-xs uppercase tracking-wide">
+                    <th className="text-left px-4 py-3">Пользователь</th>
+                    <th className="text-left px-4 py-3">Сумма</th>
+                    <th className="text-left px-4 py-3">Реквизиты</th>
+                    <th className="text-left px-4 py-3">Дата</th>
+                    <th className="text-center px-4 py-3">Статус</th>
+                    <th className="text-left px-4 py-3">Действия</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {withdrawalsLoading ? (
+                    <tr><td colSpan={6} className="text-center py-12 text-gray-500">Загрузка...</td></tr>
+                  ) : withdrawals.length === 0 ? (
+                    <tr><td colSpan={6} className="text-center py-12 text-gray-500">Нет заявок</td></tr>
+                  ) : withdrawals.map((w) => (
+                    <tr key={w.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-white">{w.user.name}</div>
+                        <div className="text-gray-500 text-xs">{w.user.email}</div>
+                        {w.user.restaurant && <div className="text-gray-600 text-xs">{w.user.restaurant.name}</div>}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-green-400">{Number(w.amount).toFixed(0)} ₽</td>
+                      <td className="px-4 py-3 text-gray-400 text-xs max-w-[200px]">
+                        {w.paymentDetails ? (
+                          <span className="break-all">{w.paymentDetails}</span>
+                        ) : <span className="text-gray-600">Не указаны</span>}
+                      </td>
+                      <td className="px-4 py-3 text-gray-500 text-xs">
+                        {new Date(w.createdAt).toLocaleDateString('ru')}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                          w.status === 'PENDING' ? 'bg-yellow-500/20 text-yellow-400' :
+                          w.status === 'PROCESSING' ? 'bg-blue-500/20 text-blue-400' :
+                          w.status === 'COMPLETED' ? 'bg-green-500/20 text-green-400' :
+                          'bg-red-500/20 text-red-400'
+                        }`}>
+                          {w.status === 'PENDING' ? 'Ожидает' :
+                           w.status === 'PROCESSING' ? 'В обработке' :
+                           w.status === 'COMPLETED' ? 'Выплачено' : 'Отклонено'}
+                        </span>
+                        {w.adminNote && <div className="text-xs text-gray-500 mt-1">{w.adminNote}</div>}
+                      </td>
+                      <td className="px-4 py-3">
+                        {w.status === 'PENDING' && (
+                          <div className="flex gap-1.5">
+                            <button
+                              onClick={() => handleWithdrawalAction(w.id, 'PROCESSING')}
+                              disabled={processingWithdrawal === w.id}
+                              className="text-xs px-2.5 py-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              В обработку
+                            </button>
+                            <button
+                              onClick={() => handleWithdrawalAction(w.id, 'REJECTED')}
+                              disabled={processingWithdrawal === w.id}
+                              className="text-xs px-2.5 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg transition-colors disabled:opacity-50"
+                            >
+                              Отклонить
+                            </button>
+                          </div>
+                        )}
+                        {w.status === 'PROCESSING' && (
+                          <button
+                            onClick={() => handleWithdrawalAction(w.id, 'COMPLETED')}
+                            disabled={processingWithdrawal === w.id}
+                            className="text-xs px-2.5 py-1 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-colors disabled:opacity-50"
+                          >
+                            Выплачено
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
@@ -657,6 +983,79 @@ export default function SuperAdminPage() {
           </div>
         )}
       </div>
+
+      {/* Модал: редактирование условий реферёра */}
+      {editingReferrer && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <h2 className="text-lg font-semibold mb-1">Условия реферёра</h2>
+            <p className="text-gray-400 text-sm mb-5">{editingReferrer.name} · {editingReferrer.email}</p>
+
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editingReferrer.customReferralConditions}
+                  onChange={(e) => setEditingReferrer((prev) => prev ? { ...prev, customReferralConditions: e.target.checked } : prev)}
+                  className="w-4 h-4 accent-orange-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-white">Особые условия</div>
+                  <div className="text-xs text-gray-500">Глобальные настройки не применяются, используются индивидуальные</div>
+                </div>
+              </label>
+
+              {editingReferrer.customReferralConditions && (
+                <div className="grid grid-cols-2 gap-4 pl-7">
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Комиссия реферёру (%)</label>
+                    <input
+                      type="number"
+                      min={0} max={100}
+                      value={editingReferrer.customCommissionRate ?? ''}
+                      placeholder="глобальная"
+                      onChange={(e) => setEditingReferrer((prev) => prev ? {
+                        ...prev,
+                        customCommissionRate: e.target.value === '' ? null : Number(e.target.value)
+                      } : prev)}
+                      className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-400 block mb-1">Скидка для рефералов (%)</label>
+                    <input
+                      type="number"
+                      min={0} max={100}
+                      value={editingReferrer.customDiscountRate ?? ''}
+                      placeholder="глобальная"
+                      onChange={(e) => setEditingReferrer((prev) => prev ? {
+                        ...prev,
+                        customDiscountRate: e.target.value === '' ? null : Number(e.target.value)
+                      } : prev)}
+                      className="w-full bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 mt-6">
+              <button
+                onClick={() => setEditingReferrer(null)}
+                className="flex-1 px-4 py-2 border border-gray-700 text-gray-300 text-sm rounded-lg hover:bg-gray-800 transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveReferrerConditions}
+                className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

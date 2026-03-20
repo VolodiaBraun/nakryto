@@ -1,4 +1,4 @@
-import { IsEmail, IsString, MinLength, MaxLength, Matches } from 'class-validator';
+import { IsEmail, IsString, MinLength, MaxLength, Matches, IsOptional } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class RegisterDto {
@@ -30,4 +30,10 @@ export class RegisterDto {
   @MaxLength(50)
   @Matches(/^[a-z0-9-]+$/, { message: 'Slug может содержать только строчные латинские буквы, цифры и дефис' })
   slug: string;
+
+  @ApiProperty({ example: 'ABCD1234', required: false })
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  referralCode?: string;
 }

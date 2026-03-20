@@ -2,7 +2,7 @@
 set -e
 
 echo "Running database migrations..."
-pnpm exec prisma migrate deploy
+npx prisma migrate deploy || echo "WARNING: migrate deploy failed, continuing startup..."
 
 echo "Starting application..."
 exec node dist/main

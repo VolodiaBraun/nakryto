@@ -1,9 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
+
+function getReferralCodeFromCookie(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:^|;\s*)referral_code=([^;]+)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -16,13 +22,22 @@ export default function RegisterPage() {
     name: '',
     restaurantName: '',
     slug: '',
+    referralCode: '',
   });
+  const [showRefCode, setShowRefCode] = useState(false);
+
+  useEffect(() => {
+    const code = getReferralCodeFromCookie();
+    if (code) {
+      setForm((prev) => ({ ...prev, referralCode: code }));
+      setShowRefCode(true);
+    }
+  }, []);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setForm((prev) => {
       const next = { ...prev, [name]: value };
-      // Авто-генерация slug из названия ресторана
       if (name === 'restaurantName') {
         next.slug = value
           .toLowerCase()
@@ -40,7 +55,9 @@ export default function RegisterPage() {
     setError('');
     setLoading(true);
     try {
-      await register(form);
+      const payload: any = { ...form };
+      if (!payload.referralCode) delete payload.referralCode;
+      await register(payload);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Ошибка регистрации');
@@ -138,6 +155,35 @@ export default function RegisterPage() {
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+
+          {/* Реферальный код */}
+          {showRefCode ? (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Реферальный код
+                {form.referralCode && (
+                  <span className="ml-2 text-xs text-green-600 font-normal">
+                    🎁 Вы получите скидку 50% на первый платный тариф
+                  </span>
+                )}
+              </label>
+              <input
+                name="referralCode"
+                value={form.referralCode}
+                onChange={handleChange}
+                placeholder="Введите код"
+                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono uppercase"
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setShowRefCode(true)}
+              className="text-sm text-blue-600 hover:underline"
+            >
+              + Есть реферальный код?
+            </button>
+          )}
 
           <button
             type="submit"
