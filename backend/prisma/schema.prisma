@@ -52,6 +52,7 @@ model Restaurant {
   // { minBookingHours: 2, maxBookingDays: 30, slotMinutes: 30, bufferMinutes: 30, autoConfirm: true }
   settings     Json     @default("{}")
   plan              Plan    @default(FREE)
+  planExpiresAt     DateTime?  // null = FREE (не истекает) или не установлено
   telegramBotToken  String?
   telegramBotActive Boolean @default(false)
   maxBotToken       String?
@@ -85,6 +86,10 @@ model User {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // ─── Биллинг / тарифы ────────────────────────────────────────────────────
+  balance              Decimal     @default(0) @db.Decimal(10,2)
+  billingType          BillingType @default(CARD)
+
   // ─── Реферальная программа ───────────────────────────────────────────────
   referralCode             String?  @unique
   referralBalance          Decimal  @default(0) @db.Decimal(10,2)
@@ -96,14 +101,21 @@ model User {
   customCommissionRate     Decimal? @db.Decimal(5,2)
   customDiscountRate       Decimal? @db.Decimal(5,2)
 
-  confirmedBookings Booking[] @relation("ConfirmedBy")
-  referredByUser    User?     @relation("UserReferrals", fields: [referredByUserId], references: [id])
-  referredUsers     User[]    @relation("UserReferrals")
+  confirmedBookings      Booking[]            @relation("ConfirmedBy")
+  paymentCards           PaymentCard[]
+  balanceTransactions    BalanceTransaction[]
+  referredByUser         User?                @relation("UserReferrals", fields: [referredByUserId], references: [id])
+  referredUsers          User[]               @relation("UserReferrals")
   referralTransactionsAsReferrer ReferralTransaction[] @relation("ReferrerTransactions")
   referralTransactionsAsReferral ReferralTransaction[] @relation("ReferralTransactions")
   referralWithdrawals            ReferralWithdrawal[]
 
   @@map("users")
+}
+
+enum BillingType {
+  CARD
+  LEGAL_ENTITY
 }
 
 enum UserRole {
@@ -277,6 +289,43 @@ enum WithdrawalStatus {
   PROCESSING
   COMPLETED
   REJECTED
+}
+
+// ─── Биллинг ─────────────────────────────────────────────────────────────
+
+model PaymentCard {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  last4       String
+  brand       String   // "Visa" | "Mastercard" | "Mir"
+  expiryMonth Int
+  expiryYear  Int
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@map("payment_cards")
+}
+
+model BalanceTransaction {
+  id          String                 @id @default(uuid())
+  userId      String
+  user        User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        BalanceTransactionType
+  amount      Decimal                @db.Decimal(10,2)  // + пополнение, - списание
+  description String
+  meta        Json?
+  createdAt   DateTime               @default(now())
+
+  @@index([userId, createdAt])
+  @@map("balance_transactions")
+}
+
+enum BalanceTransactionType {
+  TOPUP
+  PLAN_PAYMENT
+  ADJUSTMENT
+  REFUND
 }
 
 // ─── Лог уведомлений ─────────────────────────────────────────────────────────

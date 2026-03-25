@@ -17,6 +17,8 @@ interface Restaurant {
   slug: string;
   plan: string;
   ownerEmail: string | null;
+  ownerUserId: string | null;
+  ownerBalance: number | null;
   hallCount: number;
   bookings30d: number;
   createdAt: string;
@@ -56,7 +58,7 @@ interface LandingSettings {
   personalDataPolicy?: string;
 }
 
-type Tab = 'restaurants' | 'landing' | 'content' | 'referrers' | 'withdrawals';
+type Tab = 'restaurants' | 'landing' | 'content' | 'referrers' | 'withdrawals' | 'plan-config';
 
 interface Referrer {
   id: string;
@@ -118,6 +120,19 @@ export default function SuperAdminPage() {
   const [withdrawalStatusFilter, setWithdrawalStatusFilter] = useState('');
   const [processingWithdrawal, setProcessingWithdrawal] = useState<string | null>(null);
 
+  // ─── Конфиг тарифов ────────────────────────────────────────────────────────
+  const [planConfig, setPlanConfig] = useState<{
+    limits: Record<string, { maxHalls: number | null; maxBookingsPerMonth: number | null }>;
+    prices: Record<string, number>;
+  } | null>(null);
+  const [planConfigLoading, setPlanConfigLoading] = useState(false);
+  const [planConfigSaving, setPlanConfigSaving] = useState(false);
+  const [planConfigSaved, setPlanConfigSaved] = useState(false);
+  // userId → adjusting balance
+  const [adjustingBalance, setAdjustingBalance] = useState<string | null>(null);
+  const [balanceAmount, setBalanceAmount] = useState('');
+  const [balanceDesc, setBalanceDesc] = useState('');
+
   // ─── Лендинг ───────────────────────────────────────────────────────────────
   const [landingSettings, setLandingSettings] = useState<LandingSettings | null>(null);
   const [landingLoading, setLandingLoading] = useState(false);
@@ -170,6 +185,42 @@ export default function SuperAdminPage() {
   useEffect(() => {
     if (activeTab === 'landing' || activeTab === 'content') loadLandingSettings();
   }, [activeTab, loadLandingSettings]);
+
+  const loadPlanConfig = useCallback(async () => {
+    if (planConfig) return;
+    setPlanConfigLoading(true);
+    try {
+      const data = await superadminApi.getPlanConfig() as any;
+      setPlanConfig(data);
+    } catch (err) { handleAuthError(err); } finally { setPlanConfigLoading(false); }
+  }, [planConfig, handleAuthError]);
+
+  useEffect(() => {
+    if (activeTab === 'plan-config') loadPlanConfig();
+  }, [activeTab, loadPlanConfig]);
+
+  async function handleSavePlanConfig() {
+    if (!planConfig) return;
+    setPlanConfigSaving(true);
+    try {
+      await superadminApi.updatePlanConfig({ limits: planConfig.limits, prices: planConfig.prices });
+      setPlanConfigSaved(true);
+      setTimeout(() => setPlanConfigSaved(false), 2000);
+    } catch (err) { handleAuthError(err); } finally { setPlanConfigSaving(false); }
+  }
+
+  async function handleAdjustBalance(userId: string) {
+    const amt = parseFloat(balanceAmount);
+    if (!amt || !balanceDesc) return;
+    try {
+      await superadminApi.adjustUserBalance(userId, { amount: amt, description: balanceDesc });
+      setAdjustingBalance(null);
+      setBalanceAmount('');
+      setBalanceDesc('');
+      // refresh restaurants list to show updated balances
+      loadData();
+    } catch (err) { handleAuthError(err); }
+  }
 
   const loadReferralSettings = useCallback(async () => {
     if (referralSettings) return;
@@ -332,7 +383,7 @@ export default function SuperAdminPage() {
         <div className="flex items-center gap-6">
           <div className="text-sm font-semibold text-orange-400">Накрыто — Суперадмин</div>
           <nav className="flex gap-1">
-            {([['restaurants', 'Рестораны'], ['landing', 'Лендинг'], ['content', 'Контент'], ['referrers', 'Рефералы'], ['withdrawals', 'Выводы']] as [Tab, string][]).map(([id, label]) => (
+            {([['restaurants', 'Рестораны'], ['landing', 'Лендинг'], ['content', 'Контент'], ['referrers', 'Рефералы'], ['withdrawals', 'Выводы'], ['plan-config', 'Тарифы']] as [Tab, string][]).map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
@@ -399,16 +450,17 @@ export default function SuperAdminPage() {
                     <th className="text-center px-4 py-3">Telegram</th>
                     <th className="text-center px-4 py-3">MAX</th>
                     <th className="text-left px-4 py-3">Тариф</th>
+                    <th className="text-center px-4 py-3">Баланс</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-gray-500">Загрузка...</td>
+                      <td colSpan={8} className="text-center py-12 text-gray-500">Загрузка...</td>
                     </tr>
                   ) : restaurants.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-12 text-gray-500">Ничего не найдено</td>
+                      <td colSpan={8} className="text-center py-12 text-gray-500">Ничего не найдено</td>
                     </tr>
                   ) : (
                     restaurants.map((r) => (
@@ -451,6 +503,19 @@ export default function SuperAdminPage() {
                             <option value="STANDARD">Стандарт</option>
                             <option value="PREMIUM">Премиум</option>
                           </select>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {r.ownerUserId ? (
+                            <button
+                              onClick={() => { setAdjustingBalance(r.ownerUserId!); setBalanceAmount(''); setBalanceDesc(''); }}
+                              className="text-xs text-orange-400 hover:text-orange-300"
+                              title={`Баланс: ${r.ownerBalance ?? 0} ₽`}
+                            >
+                              {(r.ownerBalance ?? 0).toLocaleString('ru')} ₽
+                            </button>
+                          ) : (
+                            <span className="text-gray-600 text-xs">—</span>
+                          )}
                         </td>
                       </tr>
                     ))
@@ -766,6 +831,105 @@ export default function SuperAdminPage() {
           </div>
         )}
 
+        {/* ─── Вкладка: Тарифы (лимиты и цены) ────────────────────────────── */}
+        {activeTab === 'plan-config' && (
+          <div className="max-w-2xl space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold">Лимиты и цены тарифов</h2>
+              <button
+                onClick={handleSavePlanConfig}
+                disabled={planConfigSaving}
+                className="px-4 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white rounded-lg transition-colors"
+              >
+                {planConfigSaved ? '✓ Сохранено' : planConfigSaving ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+            {planConfigLoading || !planConfig ? (
+              <div className="text-gray-500 py-12 text-center">Загрузка...</div>
+            ) : (
+              <>
+                {/* Prices */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-medium mb-4">Цены (₽/мес)</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    {Object.entries(planConfig.prices).map(([plan, price]) => (
+                      <div key={plan}>
+                        <label className="block text-xs text-gray-400 mb-1">{plan}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={price}
+                          onChange={(e) => setPlanConfig((prev) => prev ? {
+                            ...prev,
+                            prices: { ...prev.prices, [plan]: parseInt(e.target.value, 10) || 0 },
+                          } : prev)}
+                          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Limits */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-medium mb-4">Лимиты (null = безлимит)</h3>
+                  <div className="space-y-4">
+                    {Object.entries(planConfig.limits).map(([plan, lim]) => (
+                      <div key={plan} className="border border-gray-700 rounded-lg p-4">
+                        <p className="text-sm font-medium text-orange-400 mb-3">{plan}</p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Макс. залов</label>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="null = ∞"
+                              value={lim.maxHalls ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                                setPlanConfig((prev) => prev ? {
+                                  ...prev,
+                                  limits: { ...prev.limits, [plan]: { ...lim, maxHalls: val } },
+                                } : prev);
+                              }}
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs text-gray-400 mb-1">Макс. броней/мес</label>
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="null = ∞"
+                              value={lim.maxBookingsPerMonth ?? ''}
+                              onChange={(e) => {
+                                const val = e.target.value === '' ? null : parseInt(e.target.value, 10);
+                                setPlanConfig((prev) => prev ? {
+                                  ...prev,
+                                  limits: { ...prev.limits, [plan]: { ...lim, maxBookingsPerMonth: val } },
+                                } : prev);
+                              }}
+                              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-orange-500"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* User balance adjustments — shown in restaurants list */}
+                <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                  <h3 className="font-medium mb-2">Корректировка баланса пользователей</h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    Для корректировки баланса конкретного владельца найдите его в таблице на вкладке «Рестораны» и нажмите «Баланс».
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {/* ─── Вкладка: Лендинг ────────────────────────────────────────────── */}
         {activeTab === 'landing' && (
           <div className="max-w-3xl space-y-6">
@@ -1051,6 +1215,52 @@ export default function SuperAdminPage() {
                 className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white text-sm font-medium rounded-lg transition-colors"
               >
                 Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Модал: корректировка баланса ─────────────────────────────────────── */}
+      {adjustingBalance && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <h2 className="text-base font-semibold mb-4">Корректировка баланса</h2>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Сумма (+ пополнение, − списание)</label>
+                <input
+                  type="number"
+                  value={balanceAmount}
+                  onChange={(e) => setBalanceAmount(e.target.value)}
+                  placeholder="-1000 или 500"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Причина</label>
+                <input
+                  type="text"
+                  value={balanceDesc}
+                  onChange={(e) => setBalanceDesc(e.target.value)}
+                  placeholder="Ручная корректировка"
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-orange-500"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={() => handleAdjustBalance(adjustingBalance)}
+                disabled={!balanceAmount || !balanceDesc}
+                className="flex-1 px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+              >
+                Применить
+              </button>
+              <button
+                onClick={() => setAdjustingBalance(null)}
+                className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-sm rounded-lg transition-colors"
+              >
+                Отмена
               </button>
             </div>
           </div>

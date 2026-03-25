@@ -124,4 +124,34 @@ export class SuperAdminController {
   ) {
     return this.superAdminService.updateWithdrawal(id, data);
   }
+
+  // ─── Баланс пользователей ──────────────────────────────────────────────────
+
+  @UseGuards(SuperAdminJwtGuard)
+  @Post('users/:userId/balance-adjustment')
+  @HttpCode(200)
+  adjustUserBalance(
+    @Param('userId') userId: string,
+    @Body() data: { amount: number; description: string },
+  ) {
+    return this.superAdminService.adjustUserBalance(userId, data.amount, data.description);
+  }
+
+  // ─── Лимиты и цены тарифов ─────────────────────────────────────────────────
+
+  @UseGuards(SuperAdminJwtGuard)
+  @Get('plan-config')
+  getPlanConfig() {
+    return this.superAdminService.getPlanLimitsAndPrices();
+  }
+
+  @UseGuards(SuperAdminJwtGuard)
+  @Put('plan-config')
+  @HttpCode(200)
+  updatePlanConfig(@Body() data: {
+    limits?: Record<string, { maxHalls?: number | null; maxBookingsPerMonth?: number | null }>;
+    prices?: Record<string, number>;
+  }) {
+    return this.superAdminService.updatePlanLimitsAndPrices(data);
+  }
 }

@@ -1,14 +1,8 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlanLimitsService } from '../plan-limits/plan-limits.service';
 import { CreateHallDto } from './dto/create-hall.dto';
 import { UpdateHallDto } from './dto/update-hall.dto';
-import { Plan } from '@prisma/client';
-
-const HALL_LIMITS: Record<Plan, number> = {
-  FREE: 1,
-  STANDARD: 3,
-  PREMIUM: Infinity,
-};
 
 // Шаблоны залов для онбординга
 const HALL_TEMPLATES = {
@@ -60,7 +54,10 @@ const HALL_TEMPLATES = {
 
 @Injectable()
 export class HallsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private planLimits: PlanLimitsService,
+  ) {}
 
   async findAll(restaurantId: string) {
     return this.prisma.hall.findMany({
@@ -83,11 +80,11 @@ export class HallsService {
   async create(restaurantId: string, dto: CreateHallDto) {
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      select: { plan: true },
+      select: { plan: true, planExpiresAt: true },
     });
     if (!restaurant) throw new NotFoundException('Ресторан не найден');
 
-    const limit = HALL_LIMITS[restaurant.plan];
+    const limit = await this.planLimits.getHallLimit(restaurant.plan, restaurant.planExpiresAt);
     const activeHalls = await this.prisma.hall.count({
       where: { restaurantId, isActive: true },
     });
@@ -112,11 +109,11 @@ export class HallsService {
 
     const restaurant = await this.prisma.restaurant.findUnique({
       where: { id: restaurantId },
-      select: { plan: true },
+      select: { plan: true, planExpiresAt: true },
     });
     if (!restaurant) throw new NotFoundException('Ресторан не найден');
 
-    const limit = HALL_LIMITS[restaurant.plan];
+    const limit = await this.planLimits.getHallLimit(restaurant.plan, restaurant.planExpiresAt);
     const activeHalls = await this.prisma.hall.count({
       where: { restaurantId, isActive: true },
     });

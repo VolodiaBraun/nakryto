@@ -311,6 +311,43 @@ export default function BookPage({ params }: { params: { slug: string } }) {
     );
   }
 
+  // ─── Лимит броней исчерпан ───────────────────────────────────────────────────
+
+  if (restaurant.bookingLimitExceeded) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+          <div className="max-w-3xl mx-auto px-4 py-3 flex items-center gap-3">
+            {restaurant.logoUrl && (
+              <img src={restaurant.logoUrl} alt={restaurant.name} className="w-9 h-9 rounded-full object-cover" />
+            )}
+            <div>
+              <h1 className="text-base font-semibold text-gray-900">{restaurant.name}</h1>
+              {restaurant.address && <p className="text-xs text-gray-500">{restaurant.address}</p>}
+            </div>
+          </div>
+        </header>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="text-center max-w-sm">
+            <div className="text-5xl mb-4">🚫</div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Онлайн-бронирование недоступно</h2>
+            <p className="text-gray-500">
+              Ресторан временно приостановил онлайн-бронирование. Позвоните нам, чтобы забронировать столик.
+            </p>
+            {restaurant.phone && (
+              <a
+                href={`tel:${restaurant.phone}`}
+                className="mt-4 inline-block bg-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-blue-700 transition-colors"
+              >
+                {restaurant.phone}
+              </a>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ─── Рендер ─────────────────────────────────────────────────────────────────
 
   return (

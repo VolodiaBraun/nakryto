@@ -3,6 +3,17 @@ export const DEFAULT_LANDING_SETTINGS = {
   // Реферальная программа
   referralDiscountPercent: 50,
   referralCommissionPercent: 20,
+  // Цены тарифов (для биллинга)
+  planPrices: {
+    STANDARD: 990,
+    PREMIUM: 2490,
+  },
+  // Лимиты тарифов (null = безлимит)
+  planLimits: {
+    FREE:     { maxHalls: 1,    maxBookingsPerMonth: 50 },
+    STANDARD: { maxHalls: 3,    maxBookingsPerMonth: null },
+    PREMIUM:  { maxHalls: null, maxBookingsPerMonth: null },
+  },
   privacyPolicy: `# Политика конфиденциальности
 
 Настоящая Политика конфиденциальности определяет порядок обработки и защиты персональных данных пользователей сервиса Накрыто (nakryto.ru).

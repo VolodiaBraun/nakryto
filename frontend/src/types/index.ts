@@ -14,6 +14,7 @@ export interface Restaurant {
   isActive: boolean;
   telegramBotActive?: boolean;
   maxBotActive?: boolean;
+  bookingLimitExceeded?: boolean;
   createdAt: string;
   updatedAt: string;
 }
