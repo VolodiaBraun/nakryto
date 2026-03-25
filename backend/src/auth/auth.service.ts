@@ -65,6 +65,16 @@ export class AuthService {
         },
       });
 
+      // Проверяем реферальный код (если указан) — сохраняем как pending (last-touch)
+      let pendingReferralCode: string | null = null;
+      if (dto.referralCode) {
+        const referrer = await tx.user.findUnique({
+          where: { referralCode: dto.referralCode },
+          select: { id: true },
+        });
+        if (referrer) pendingReferralCode = dto.referralCode;
+      }
+
       const user = await tx.user.create({
         data: {
           restaurantId: restaurant.id,
@@ -73,6 +83,7 @@ export class AuthService {
           name: dto.name,
           role: 'OWNER',
           verifyToken,
+          pendingReferralCode,
         },
       });
 

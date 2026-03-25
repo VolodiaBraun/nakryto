@@ -291,6 +291,27 @@ export const maxApi = {
     request('/api/restaurant/max/disable', { method: 'DELETE' }),
 };
 
+// ─── Referral API ─────────────────────────────────────────────────────────────
+
+export const referralApi = {
+  getInfo: () => request('/api/restaurant/referral'),
+
+  generateCode: () =>
+    request('/api/restaurant/referral/code', { method: 'POST' }),
+
+  trackReferral: (code: string) =>
+    request('/api/restaurant/referral/track', {
+      method: 'POST',
+      body: JSON.stringify({ code }),
+    }),
+
+  requestWithdrawal: (amount: number, paymentDetails?: string) =>
+    request('/api/restaurant/referral/withdraw', {
+      method: 'POST',
+      body: JSON.stringify({ amount, paymentDetails }),
+    }),
+};
+
 // ─── SuperAdmin API ───────────────────────────────────────────────────────────
 
 async function superadminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -341,6 +362,44 @@ export const superadminApi = {
 
   updateLandingSettings: (data: object) =>
     superadminRequest('/api/superadmin/landing', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getReferralSettings: () => superadminRequest('/api/superadmin/referral-settings'),
+
+  updateReferralSettings: (data: { referralDiscountPercent: number; referralCommissionPercent: number }) =>
+    superadminRequest('/api/superadmin/referral-settings', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getReferrers: (params?: { page?: number; limit?: number; search?: string }) => {
+    const qs = params ? '?' + new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
+    ).toString() : '';
+    return superadminRequest(`/api/superadmin/referrers${qs}`);
+  },
+
+  updateReferrerConditions: (userId: string, data: {
+    customReferralConditions: boolean;
+    customCommissionRate?: number | null;
+    customDiscountRate?: number | null;
+  }) =>
+    superadminRequest(`/api/superadmin/referrers/${userId}/conditions`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getWithdrawals: (params?: { page?: number; limit?: number; status?: string }) => {
+    const qs = params ? '?' + new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
+    ).toString() : '';
+    return superadminRequest(`/api/superadmin/withdrawals${qs}`);
+  },
+
+  updateWithdrawal: (id: string, data: { status: string; adminNote?: string }) =>
+    superadminRequest(`/api/superadmin/withdrawals/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),

@@ -1,5 +1,8 @@
 export const DEFAULT_LANDING_SETTINGS = {
   supportEmail: 'info@nakryto.ru',
+  // Реферальная программа
+  referralDiscountPercent: 50,
+  referralCommissionPercent: 20,
   privacyPolicy: `# Политика конфиденциальности
 
 Настоящая Политика конфиденциальности определяет порядок обработки и защиты персональных данных пользователей сервиса Накрыто (nakryto.ru).

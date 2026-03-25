@@ -15,6 +15,7 @@ import { RedisModule } from './redis/redis.module';
 import { SuperAdminModule } from './superadmin/superadmin.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { MaxModule } from './max/max.module';
+import { ReferralModule } from './referral/referral.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { MaxModule } from './max/max.module';
     SuperAdminModule,
     TelegramModule,
     MaxModule,
+    ReferralModule,
   ],
 })
 export class AppModule {}

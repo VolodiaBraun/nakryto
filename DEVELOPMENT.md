@@ -32,7 +32,7 @@ fix/*         — баг-фиксы (создавать от develop или main
    git push origin feature/my-feature
 
 4. Создаёшь Pull Request: feature/* → develop
-   → CI автоматически деплоит на staging.nakryto.ru
+   → После merge CI автоматически деплоит на staging.nakryto.ru
 
 5. Тестируешь на staging
 
@@ -50,12 +50,14 @@ fix/*         — баг-фиксы (создавать от develop или main
 - Ручной запуск: GitHub → Actions → Deploy → Run workflow
 
 **Что делает pipeline:**
-1. Собирает backend TypeScript (полная пересборка `dist/`)
+1. Собирает backend TypeScript (`pnpm exec prisma generate && pnpm build`)
 2. Rsync `dist/` на сервер в `/opt/nakryto/{env}/backend/dist/`
-3. `docker restart nakryto_{env}_backend`
-4. Собирает frontend Next.js с нужным `NEXT_PUBLIC_API_URL`
-5. Rsync `.next/` и `public/` на сервер
-6. `docker restart nakryto_{env}_frontend`
+3. Rsync `prisma/migrations/` и `prisma/schema.prisma` на сервер
+4. `docker cp prisma/ → контейнер`, затем `prisma migrate deploy` + `prisma generate`
+5. `docker restart nakryto_{env}_backend`
+6. Собирает frontend Next.js с нужным `NEXT_PUBLIC_API_URL`
+7. Rsync `.next/` и `public/` на сервер
+8. `docker restart nakryto_{env}_frontend`
 
 **Время деплоя:** ~3-5 минут
 
@@ -80,6 +82,7 @@ fix/*         — баг-фиксы (создавать от develop или main
 ├── prod/
 │   ├── backend/
 │   │   ├── dist/          ← смонтирован в контейнер nakryto_backend
+│   │   ├── prisma/        ← schema.prisma + migrations/ (для migrate deploy)
 │   │   ├── .env           ← переменные окружения продакшна
 │   │   └── node_modules/
 │   │       └── nodemailer/ ← смонтирован в контейнер
@@ -89,6 +92,7 @@ fix/*         — баг-фиксы (создавать от develop или main
 └── staging/
     ├── backend/
     │   ├── dist/          ← смонтирован в nakryto_staging_backend
+    │   ├── prisma/        ← schema.prisma + migrations/
     │   ├── .env           ← переменные окружения staging (другая БД)
     │   └── node_modules/
     │       └── nodemailer/
@@ -141,15 +145,18 @@ pnpm dev                 # http://localhost:3000
 cd backend
 pnpm exec prisma migrate dev --name название_миграции
 
-# Применить на прод/staging делает CI/CD автоматически через prisma generate
-# Если нужно применить вручную:
+# CI/CD автоматически делает migrate deploy + prisma generate при каждом деплое
+# Если нужно применить вручную на сервере:
 docker exec nakryto_backend npx prisma migrate deploy
+docker exec nakryto_backend npx prisma generate
+docker restart nakryto_backend
 ```
 
 **⚠️ Важно:** При добавлении новых полей в Prisma schema:
-1. Создать SQL миграцию в `backend/prisma/migrations/`
+1. Создать SQL миграцию в `backend/prisma/migrations/` (или `prisma migrate dev --name ...`)
 2. Сделать `prisma generate` локально
-3. Закоммитить оба файла
+3. Закоммитить оба файла (`schema.prisma` + новая папка миграции)
+4. CI/CD автоматически применит на staging/prod при пуше
 
 ---
 
@@ -225,7 +232,8 @@ NEXT_PUBLIC_API_URL=https://staging.nakryto.ru pnpm build
 | Сервер SSH | `176.124.218.119` root (через paramiko) |
 | Прод dashboard | https://nakryto.ru/dashboard — admin@demo.ru / admin123456 |
 | Superadmin | https://nakryto.ru/superadmin — superadmin@nakryto.ru / superadmin123 |
-| Staging dashboard | https://staging.nakryto.ru/dashboard |
+| Staging dashboard | https://staging.nakryto.ru/dashboard — admin@demo.ru / admin123456 |
+| Staging superadmin | https://staging.nakryto.ru/superadmin — superadmin@nakryto.ru / superadmin123 |
 | GitHub | https://github.com/VolodiaBraun/nakryto |
 
 ---

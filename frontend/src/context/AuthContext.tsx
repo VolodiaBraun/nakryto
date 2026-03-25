@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { authApi } from '@/lib/api';
+import { authApi, referralApi } from '@/lib/api';
 import type { User, Restaurant } from '@/types';
 
 const PERMISSIONS = {
@@ -69,6 +69,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data.user);
     setRestaurant(data.restaurant);
+
+    // Last-touch: если в cookie есть реф-код — обновляем pendingReferralCode
+    // Покрывает кейс "пришёл по новой ссылке будучи не залогиненным, потом залогинился"
+    const refCookie = document.cookie.match(/(?:^|;\s*)referral_code=([^;]+)/)?.[1];
+    if (refCookie && data.user?.role === 'OWNER') {
+      referralApi.trackReferral(decodeURIComponent(refCookie)).catch(() => {});
+    }
   };
 
   const register = async (registerData: RegisterData) => {
