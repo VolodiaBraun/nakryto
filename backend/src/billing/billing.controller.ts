@@ -14,12 +14,12 @@ import {
   Req,
 } from '@nestjs/common';
 import { BillingService } from './billing.service';
-import { JwtAuthGuard } from '../auth/guards/jwt.guard';
+import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 
 @Controller('api/restaurant/billing')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtGuard, RolesGuard)
 @Roles('OWNER')
 export class BillingController {
   constructor(private readonly billingService: BillingService) {}
