@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 
 async function getPrivacyPolicy(): Promise<string> {
   try {
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const apiUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     const res = await fetch(`${apiUrl}/api/public/landing-settings`, { cache: 'no-store' });
     if (res.ok) {
       const json = await res.json();
