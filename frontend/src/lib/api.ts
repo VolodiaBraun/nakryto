@@ -312,6 +312,51 @@ export const referralApi = {
     }),
 };
 
+// ─── Billing API ──────────────────────────────────────────────────────────────
+
+export const billingApi = {
+  getSummary: () => request('/api/restaurant/billing/summary'),
+
+  getLimitStatus: () => request('/api/restaurant/billing/limit-status'),
+
+  topUp: (amount: number) =>
+    request('/api/restaurant/billing/topup', {
+      method: 'POST',
+      body: JSON.stringify({ amount }),
+    }),
+
+  getTransactions: (params?: { page?: number; limit?: number }) => {
+    const qs = params ? '?' + new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
+    ).toString() : '';
+    return request(`/api/restaurant/billing/transactions${qs}`);
+  },
+
+  upgradePlan: (plan: string, referralCode?: string) =>
+    request('/api/restaurant/billing/upgrade', {
+      method: 'POST',
+      body: JSON.stringify({ plan, referralCode }),
+    }),
+
+  addCard: (data: { last4: string; brand: string; expiryMonth: number; expiryYear: number }) =>
+    request('/api/restaurant/billing/cards', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  removeCard: (id: string) =>
+    request(`/api/restaurant/billing/cards/${id}`, { method: 'DELETE' }),
+
+  setDefaultCard: (id: string) =>
+    request(`/api/restaurant/billing/cards/${id}/default`, { method: 'PUT' }),
+
+  setBillingType: (billingType: 'CARD' | 'LEGAL_ENTITY') =>
+    request('/api/restaurant/billing/billing-type', {
+      method: 'PUT',
+      body: JSON.stringify({ billingType }),
+    }),
+};
+
 // ─── SuperAdmin API ───────────────────────────────────────────────────────────
 
 async function superadminRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -400,6 +445,23 @@ export const superadminApi = {
 
   updateWithdrawal: (id: string, data: { status: string; adminNote?: string }) =>
     superadminRequest(`/api/superadmin/withdrawals/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  adjustUserBalance: (userId: string, data: { amount: number; description: string }) =>
+    superadminRequest(`/api/superadmin/users/${userId}/balance-adjustment`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  getPlanConfig: () => superadminRequest('/api/superadmin/plan-config'),
+
+  updatePlanConfig: (data: {
+    limits?: Record<string, { maxHalls?: number | null; maxBookingsPerMonth?: number | null }>;
+    prices?: Record<string, number>;
+  }) =>
+    superadminRequest('/api/superadmin/plan-config', {
       method: 'PUT',
       body: JSON.stringify(data),
     }),

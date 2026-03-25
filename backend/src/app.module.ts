@@ -16,6 +16,8 @@ import { SuperAdminModule } from './superadmin/superadmin.module';
 import { TelegramModule } from './telegram/telegram.module';
 import { MaxModule } from './max/max.module';
 import { ReferralModule } from './referral/referral.module';
+import { BillingModule } from './billing/billing.module';
+import { PlanLimitsModule } from './plan-limits/plan-limits.module';
 
 @Module({
   imports: [
@@ -36,6 +38,8 @@ import { ReferralModule } from './referral/referral.module';
     TelegramModule,
     MaxModule,
     ReferralModule,
+    BillingModule,
+    PlanLimitsModule,
   ],
 })
 export class AppModule {}

@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException, ConflictException } from '@nestj
 import { DEFAULT_LANDING_SETTINGS } from '../superadmin/landing-defaults';
 import { PrismaService } from '../prisma/prisma.service';
 import { BookingsService } from '../bookings/bookings.service';
+import { PlanLimitsService } from '../plan-limits/plan-limits.service';
 import { BookingGateway } from '../websocket/websocket.gateway';
 import { CreateBookingDto } from '../bookings/dto/create-booking.dto';
 import { REDIS_CLIENT } from '../redis/redis.module';
@@ -14,6 +15,7 @@ export class PublicApiService {
   constructor(
     private prisma: PrismaService,
     private bookingsService: BookingsService,
+    private planLimits: PlanLimitsService,
     private gateway: BookingGateway,
     @Inject(REDIS_CLIENT) private redis: Redis,
   ) {}
@@ -66,10 +68,17 @@ export class PublicApiService {
         id: true, slug: true, name: true, address: true, phone: true,
         description: true, logoUrl: true, timezone: true,
         workingHours: true, settings: true, telegramBotActive: true, maxBotActive: true,
+        plan: true, planExpiresAt: true,
       },
     });
     if (!restaurant) throw new NotFoundException('Ресторан не найден');
-    return restaurant;
+
+    const bookingLimitExceeded = await this.planLimits.isBookingLimitExceeded(
+      restaurant.id, restaurant.plan, restaurant.planExpiresAt,
+    );
+
+    const { plan: _plan, planExpiresAt: _exp, ...rest } = restaurant;
+    return { ...rest, bookingLimitExceeded };
   }
 
   async getHalls(slug: string) {

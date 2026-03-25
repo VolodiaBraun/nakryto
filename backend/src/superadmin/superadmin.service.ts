@@ -2,15 +2,11 @@ import { Injectable, UnauthorizedException, NotFoundException } from '@nestjs/co
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlanLimitsService } from '../plan-limits/plan-limits.service';
+import { ReferralService } from '../referral/referral.service';
 import { Plan } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { DEFAULT_LANDING_SETTINGS } from './landing-defaults';
-
-const PLAN_PRICES: Record<string, number> = {
-  FREE: 0,
-  STANDARD: 990,
-  PREMIUM: 2490,
-};
 
 @Injectable()
 export class SuperAdminService {
@@ -18,6 +14,8 @@ export class SuperAdminService {
     private prisma: PrismaService,
     private jwtService: JwtService,
     private config: ConfigService,
+    private planLimits: PlanLimitsService,
+    private referralService: ReferralService,
   ) {}
 
   async login(email: string, password: string) {
@@ -60,7 +58,7 @@ export class SuperAdminService {
           maxBotActive: true,
           users: {
             where: { role: 'OWNER' },
-            select: { email: true },
+            select: { id: true, email: true, balance: true },
             take: 1,
           },
           _count: {
@@ -95,6 +93,8 @@ export class SuperAdminService {
       plan: r.plan,
       createdAt: r.createdAt,
       ownerEmail: r.users[0]?.email ?? null,
+      ownerUserId: r.users[0]?.id ?? null,
+      ownerBalance: r.users[0] ? Number(r.users[0].balance) : null,
       hallCount: r._count.halls,
       bookings30d: countMap.get(r.id) ?? 0,
       telegramBotActive: r.telegramBotActive,
@@ -137,114 +137,14 @@ export class SuperAdminService {
 
     // Обработка реферальных комиссий при апгрейде на платный тариф
     if (owner && newPlan !== 'FREE' && oldPlan !== newPlan) {
-      const paymentAmount = PLAN_PRICES[newPlan] ?? 0;
+      const prices = await this.planLimits.getPrices();
+      const paymentAmount = prices[newPlan] ?? 0;
       if (paymentAmount > 0) {
-        await this.processReferralOnPlanUpgrade(owner, paymentAmount, newPlan, oldPlan);
+        await this.referralService.processReferralOnPlanUpgrade(owner, paymentAmount, newPlan, oldPlan);
       }
     }
 
     return updated;
-  }
-
-  private async processReferralOnPlanUpgrade(
-    owner: {
-      id: string;
-      referredByUserId: string | null;
-      pendingReferralCode: string | null;
-      referralDiscountUsed: boolean;
-      customReferralConditions: boolean;
-      customCommissionRate: any;
-      customDiscountRate: any;
-    },
-    paymentAmount: number,
-    newPlan: string,
-    oldPlan: string,
-  ) {
-    const isFirstPaidUpgrade = oldPlan === 'FREE';
-
-    // Получаем глобальные настройки реферальной программы
-    const settings = await this.getReferralSettings();
-    const globalCommissionRate: number = settings.referralCommissionPercent ?? 20;
-    const globalDiscountRate: number = settings.referralDiscountPercent ?? 50;
-
-    let referrerId: string | null = owner.referredByUserId;
-    let isFirstPayment = false;
-
-    // Если первая оплата и attribution ещё не заблокирована
-    if (isFirstPaidUpgrade && !owner.referredByUserId && owner.pendingReferralCode) {
-      // Находим реферера по коду
-      const referrer = await this.prisma.user.findUnique({
-        where: { referralCode: owner.pendingReferralCode },
-        select: { id: true },
-      });
-
-      if (referrer && referrer.id !== owner.id) {
-        referrerId = referrer.id;
-        isFirstPayment = true;
-
-        // Блокируем атрибуцию (last-touch)
-        await this.prisma.user.update({
-          where: { id: owner.id },
-          data: {
-            referredByUserId: referrer.id,
-            referralDiscountUsed: true,
-          },
-        });
-      }
-    }
-
-    // Если нет реферера — ничего не делаем
-    if (!referrerId) return;
-
-    // Получаем данные реферера для проверки особых условий
-    const referrer = await this.prisma.user.findUnique({
-      where: { id: referrerId },
-      select: {
-        customReferralConditions: true,
-        customCommissionRate: true,
-        customDiscountRate: true,
-      },
-    });
-
-    if (!referrer) return;
-
-    // Определяем ставки: если особые условия → берём из аккаунта реферера, иначе глобальные
-    const commissionRate = referrer.customReferralConditions && referrer.customCommissionRate !== null
-      ? Number(referrer.customCommissionRate)
-      : globalCommissionRate;
-
-    const discountRate = referrer.customReferralConditions && referrer.customDiscountRate !== null
-      ? Number(referrer.customDiscountRate)
-      : globalDiscountRate;
-
-    // Сумма после скидки (только для первой оплаты)
-    const effectivePayment = isFirstPayment && !owner.referralDiscountUsed
-      ? paymentAmount * (1 - discountRate / 100)
-      : paymentAmount;
-
-    const commissionAmount = Math.round(effectivePayment * (commissionRate / 100) * 100) / 100;
-
-    if (commissionAmount <= 0) return;
-
-    // Создаём транзакцию и пополняем баланс реферера
-    await this.prisma.$transaction([
-      this.prisma.referralTransaction.create({
-        data: {
-          referrerId,
-          referralUserId: owner.id,
-          paymentAmount,
-          commissionRate,
-          commissionAmount,
-          planName: newPlan,
-          isFirstPayment,
-          discountRate: isFirstPayment ? discountRate : null,
-        },
-      }),
-      this.prisma.user.update({
-        where: { id: referrerId },
-        data: { referralBalance: { increment: commissionAmount } },
-      }),
-    ]);
   }
 
   async getStats() {
@@ -432,6 +332,63 @@ export class SuperAdminService {
     ]);
 
     return { items: withdrawals, total, page, limit };
+  }
+
+  // ─── Управление балансом пользователей ────────────────────────────────────
+
+  async adjustUserBalance(userId: string, amount: number, description: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Пользователь не найден');
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: { balance: { increment: amount } },
+      }),
+      this.prisma.balanceTransaction.create({
+        data: { userId, type: 'ADJUSTMENT', amount, description },
+      }),
+    ]);
+
+    const updated = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, name: true, email: true, balance: true },
+    });
+    return updated;
+  }
+
+  // ─── Лимиты и цены тарифов ─────────────────────────────────────────────────
+
+  async getPlanLimitsAndPrices() {
+    const [limits, prices] = await Promise.all([
+      this.planLimits.getLimits(),
+      this.planLimits.getPrices(),
+    ]);
+    return { limits, prices };
+  }
+
+  async updatePlanLimitsAndPrices(data: {
+    limits?: Partial<Record<string, { maxHalls?: number | null; maxBookingsPerMonth?: number | null }>>;
+    prices?: Record<string, number>;
+  }) {
+    const current = await this.getLandingSettings() as any;
+    const currentLimits = current.planLimits ?? DEFAULT_LANDING_SETTINGS.planLimits;
+    const currentPrices = current.planPrices ?? DEFAULT_LANDING_SETTINGS.planPrices;
+
+    const newLimits = data.limits
+      ? Object.fromEntries(
+          Object.entries(currentLimits).map(([plan, lim]: [string, any]) => [
+            plan,
+            { ...lim, ...(data.limits?.[plan] ?? {}) },
+          ]),
+        )
+      : currentLimits;
+
+    return this.updateLandingSettings({
+      ...current,
+      planLimits: newLimits,
+      planPrices: data.prices ? { ...currentPrices, ...data.prices } : currentPrices,
+    });
   }
 
   async updateWithdrawal(

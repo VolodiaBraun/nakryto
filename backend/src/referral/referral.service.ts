@@ -134,6 +134,84 @@ export class ReferralService {
     return { ok: true };
   }
 
+  // ─── Обработка реферала при оплате тарифа ──────────────────────────────────
+  // Вызывается из BillingService и SuperAdminService при апгрейде плана
+  async processReferralOnPlanUpgrade(
+    owner: {
+      id: string;
+      referredByUserId: string | null;
+      pendingReferralCode: string | null;
+      referralDiscountUsed: boolean;
+    },
+    paymentAmount: number,
+    newPlan: string,
+    oldPlan: string,
+  ) {
+    const isFirstPaidUpgrade = oldPlan === 'FREE';
+
+    // Глобальные настройки из SiteSettings
+    const row = await this.prisma.siteSettings.findUnique({ where: { id: 'default' } });
+    const settings = row?.data as any ?? {};
+    const globalCommissionRate: number = settings.referralCommissionPercent ?? 20;
+    const globalDiscountRate: number = settings.referralDiscountPercent ?? 50;
+
+    let referrerId: string | null = owner.referredByUserId;
+    let isFirstPayment = false;
+
+    if (isFirstPaidUpgrade && !owner.referredByUserId && owner.pendingReferralCode) {
+      const referrer = await this.prisma.user.findUnique({
+        where: { referralCode: owner.pendingReferralCode },
+        select: { id: true },
+      });
+      if (referrer && referrer.id !== owner.id) {
+        referrerId = referrer.id;
+        isFirstPayment = true;
+        await this.prisma.user.update({
+          where: { id: owner.id },
+          data: { referredByUserId: referrer.id, referralDiscountUsed: true },
+        });
+      }
+    }
+
+    if (!referrerId) return;
+
+    const referrer = await this.prisma.user.findUnique({
+      where: { id: referrerId },
+      select: { customReferralConditions: true, customCommissionRate: true, customDiscountRate: true },
+    });
+    if (!referrer) return;
+
+    const commissionRate = referrer.customReferralConditions && referrer.customCommissionRate !== null
+      ? Number(referrer.customCommissionRate) : globalCommissionRate;
+    const discountRate = referrer.customReferralConditions && referrer.customDiscountRate !== null
+      ? Number(referrer.customDiscountRate) : globalDiscountRate;
+
+    const effectivePayment = isFirstPayment && !owner.referralDiscountUsed
+      ? paymentAmount * (1 - discountRate / 100)
+      : paymentAmount;
+    const commissionAmount = Math.round(effectivePayment * (commissionRate / 100) * 100) / 100;
+    if (commissionAmount <= 0) return;
+
+    await this.prisma.$transaction([
+      this.prisma.referralTransaction.create({
+        data: {
+          referrerId,
+          referralUserId: owner.id,
+          paymentAmount,
+          commissionRate,
+          commissionAmount,
+          planName: newPlan,
+          isFirstPayment,
+          discountRate: isFirstPayment ? discountRate : null,
+        },
+      }),
+      this.prisma.user.update({
+        where: { id: referrerId },
+        data: { referralBalance: { increment: commissionAmount } },
+      }),
+    ]);
+  }
+
   async requestWithdrawal(userId: string, amount: number, paymentDetails?: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

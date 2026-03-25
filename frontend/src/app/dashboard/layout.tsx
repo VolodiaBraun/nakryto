@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { Sidebar } from '@/components/layout/Sidebar';
+import { PlanLimitBanner } from '@/components/billing/PlanLimitBanner';
 import { authApi } from '@/lib/api';
 
 function EmailVerificationBanner() {
@@ -83,6 +84,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <Sidebar />
       <div className="flex-1 flex flex-col overflow-hidden">
         {!user.emailVerified && <EmailVerificationBanner />}
+        <PlanLimitBanner />
         <main className="flex-1 overflow-auto">
           {children}
         </main>

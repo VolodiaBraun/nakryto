@@ -18,6 +18,7 @@ const navItems = [
   { href: '/dashboard/tables', label: 'Столы', icon: '🪑' },
   { href: '/dashboard/staff', label: 'Сотрудники', icon: '👥', roles: ['OWNER'] as string[] },
   { href: '/dashboard/referral', label: 'Рефералы', icon: '🤝', roles: ['OWNER'] as string[] },
+  { href: '/dashboard/billing', label: 'Тариф и баланс', icon: '💳', roles: ['OWNER'] as string[] },
   { href: '/dashboard/settings', label: 'Настройки', icon: '⚙️', roles: ['OWNER'] as string[] },
 ];
 

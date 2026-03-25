@@ -6,6 +6,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { PlanLimitsService } from '../plan-limits/plan-limits.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { MaxService } from '../max/max.service';
@@ -19,6 +20,7 @@ import { BookingGateway } from '../websocket/websocket.gateway';
 export class BookingsService {
   constructor(
     private prisma: PrismaService,
+    private planLimits: PlanLimitsService,
     private gateway: BookingGateway,
     private notifications: NotificationsService,
     private telegram: TelegramService,
@@ -110,26 +112,19 @@ export class BookingsService {
     if (source === 'ONLINE') {
       const restaurant = await this.prisma.restaurant.findUnique({
         where: { id: restaurantId },
-        select: { plan: true, settings: true },
+        select: { plan: true, planExpiresAt: true, settings: true },
       });
 
       autoConfirm = !!(restaurant?.settings as any)?.autoConfirm;
 
-      if (restaurant?.plan === 'FREE') {
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
-
-        const monthBookings = await this.prisma.booking.count({
-          where: {
-            restaurantId,
-            source: { not: 'MANUAL' },
-            createdAt: { gte: monthStart, lte: monthEnd },
-          },
-        });
-
-        if (monthBookings >= 50) {
-          throw new ForbiddenException('Достигнут лимит броней для бесплатного тарифа');
+      if (restaurant) {
+        const exceeded = await this.planLimits.isBookingLimitExceeded(
+          restaurantId,
+          restaurant.plan,
+          restaurant.planExpiresAt,
+        );
+        if (exceeded) {
+          throw new ForbiddenException('Достигнут лимит броней для вашего тарифа');
         }
       }
     }

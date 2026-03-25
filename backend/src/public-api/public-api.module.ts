@@ -3,9 +3,10 @@ import { PublicApiController } from './public-api.controller';
 import { PublicApiService } from './public-api.service';
 import { BookingsModule } from '../bookings/bookings.module';
 import { WebsocketModule } from '../websocket/websocket.module';
+import { PlanLimitsModule } from '../plan-limits/plan-limits.module';
 
 @Module({
-  imports: [BookingsModule, WebsocketModule],
+  imports: [BookingsModule, WebsocketModule, PlanLimitsModule],
   controllers: [PublicApiController],
   providers: [PublicApiService],
 })
