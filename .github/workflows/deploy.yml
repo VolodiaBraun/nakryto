@@ -29,12 +29,14 @@ jobs:
             echo "BACKEND_CONTAINER=nakryto_backend" >> $GITHUB_ENV
             echo "FRONTEND_CONTAINER=nakryto_frontend" >> $GITHUB_ENV
             echo "API_URL=https://api.nakryto.ru" >> $GITHUB_ENV
+            echo "BACKEND_INTERNAL_URL=http://nakryto_backend:3001" >> $GITHUB_ENV
           else
             echo "ENV=staging" >> $GITHUB_ENV
             echo "DEPLOY_PATH=/opt/nakryto/staging" >> $GITHUB_ENV
             echo "BACKEND_CONTAINER=nakryto_staging_backend" >> $GITHUB_ENV
             echo "FRONTEND_CONTAINER=nakryto_staging_frontend" >> $GITHUB_ENV
             echo "API_URL=https://staging.nakryto.ru" >> $GITHUB_ENV
+            echo "BACKEND_INTERNAL_URL=http://nakryto_staging_backend:3001" >> $GITHUB_ENV
           fi
 
       # ─── Setup ───────────────────────────────────────────────────────────────
@@ -110,8 +112,14 @@ jobs:
             frontend/public/ \
             ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ env.DEPLOY_PATH }}/frontend/public/
 
+          # Inject BACKEND_URL into container via .env.production.local (Next.js reads at runtime)
+          echo "BACKEND_URL=${{ env.BACKEND_INTERNAL_URL }}" > /tmp/frontend.env
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no /tmp/frontend.env \
+            ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:/tmp/frontend.env
+
           ssh -i ~/.ssh/id_rsa ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
-            "docker restart ${{ env.FRONTEND_CONTAINER }} && echo 'Frontend restarted'"
+            "docker cp /tmp/frontend.env ${{ env.FRONTEND_CONTAINER }}:/app/.env.production.local && \
+             docker restart ${{ env.FRONTEND_CONTAINER }} && echo 'Frontend restarted'"
 
       # ─── Summary ─────────────────────────────────────────────────────────────
       - name: Print result
