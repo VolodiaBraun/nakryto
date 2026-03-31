@@ -87,6 +87,8 @@ jobs:
 
           ssh -i ~/.ssh/id_rsa ${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }} \
             "docker cp ${{ env.DEPLOY_PATH }}/backend/prisma/. ${{ env.BACKEND_CONTAINER }}:/app/prisma/ && \
+             docker start ${{ env.BACKEND_CONTAINER }} 2>/dev/null || true && \
+             sleep 5 && \
              docker exec ${{ env.BACKEND_CONTAINER }} npx prisma migrate deploy && \
              docker exec ${{ env.BACKEND_CONTAINER }} npx prisma generate && \
              docker restart ${{ env.BACKEND_CONTAINER }} && echo 'Backend restarted'"
