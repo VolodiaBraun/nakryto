@@ -1,15 +1,15 @@
 import {
   Controller, Post, Delete, Param, Body, UseGuards,
-  UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator,
+  UseInterceptors, UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
-import { memoryStorage } from 'multer';
 import { UploadsService } from './uploads.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
-const multerOptions = { storage: memoryStorage() };
+// Memory storage — NestJS FileInterceptor default when no storage specified
+const multerOptions = {};
 
 @ApiTags('Uploads')
 @ApiBearerAuth()
