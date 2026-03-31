@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
-import { hallsApi } from '@/lib/api';
+import { hallsApi, uploadsApi } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
 import type { Hall } from '@/types';
+import PhotoUploader from '@/components/PhotoUploader';
 
 const TEMPLATES = [
   { key: 'empty', label: 'Пустой зал', icon: '□', desc: '0 столов' },
@@ -19,6 +20,8 @@ export default function HallsPage() {
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
+  const [photosHallId, setPhotosHallId] = useState<string | null>(null);
+  const [uploadingHall, setUploadingHall] = useState(false);
 
   const { data: halls = [], isLoading } = useQuery<Hall[]>({
     queryKey: ['halls'],
@@ -55,6 +58,31 @@ export default function HallsPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (newName.trim()) createMutation.mutate(newName.trim());
+  };
+
+  const photosHall = halls.find((h) => h.id === photosHallId);
+
+  const handleUploadHallPhoto = async (file: File) => {
+    if (!photosHallId) return;
+    setUploadingHall(true);
+    try {
+      await uploadsApi.uploadHallPhoto(photosHallId, file);
+      qc.invalidateQueries({ queryKey: ['halls'] });
+    } catch (err: any) {
+      alert(err.message || 'Ошибка загрузки');
+    } finally {
+      setUploadingHall(false);
+    }
+  };
+
+  const handleDeleteHallPhoto = async (url: string) => {
+    if (!photosHallId || !confirm('Удалить фото?')) return;
+    try {
+      await uploadsApi.deleteHallPhoto(photosHallId, url);
+      qc.invalidateQueries({ queryKey: ['halls'] });
+    } catch (err: any) {
+      alert(err.message || 'Ошибка удаления');
+    }
   };
 
   return (
@@ -116,6 +144,7 @@ export default function HallsPage() {
                 if (confirm(`Удалить зал "${hall.name}"?`)) deleteMutation.mutate(hall.id);
               }}
               onRename={(name) => renameMutation.mutate({ id: hall.id, name })}
+              onPhotos={() => setPhotosHallId(hall.id)}
             />
           ))}
 
@@ -169,11 +198,45 @@ export default function HallsPage() {
           </div>
         </div>
       )}
+
+      {/* Модалка фото зала */}
+      {photosHall && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg shadow-xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="font-semibold text-gray-900">Фото зала — {photosHall.name}</h3>
+              <button
+                onClick={() => setPhotosHallId(null)}
+                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <PhotoUploader
+              photos={photosHall.photos ?? []}
+              maxPhotos={15}
+              uploading={uploadingHall}
+              onUpload={handleUploadHallPhoto}
+              onDelete={handleDeleteHallPhoto}
+              label="Фотографии зала (до 15 шт)"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function HallCard({ hall, canManage, onEdit, onDelete, onRename }: { hall: Hall; canManage: boolean; onEdit: () => void; onDelete: () => void; onRename: (name: string) => void }) {
+function HallCard({
+  hall, canManage, onEdit, onDelete, onRename, onPhotos,
+}: {
+  hall: Hall;
+  canManage: boolean;
+  onEdit: () => void;
+  onDelete: () => void;
+  onRename: (name: string) => void;
+  onPhotos: () => void;
+}) {
   const tablesCount = hall.tables?.length || 0;
   const [editing, setEditing] = useState(false);
   const [nameValue, setNameValue] = useState(hall.name);
@@ -225,9 +288,21 @@ function HallCard({ hall, canManage, onEdit, onDelete, onRename }: { hall: Hall;
               )}
             </div>
           )}
-          <p className="text-sm text-gray-500 mt-0.5">{tablesCount} столов</p>
+          <p className="text-sm text-gray-500 mt-0.5">
+            {tablesCount} столов
+            {(hall.photos?.length ?? 0) > 0 && (
+              <span className="ml-2 text-blue-500">· {hall.photos!.length} фото</span>
+            )}
+          </p>
         </div>
         <div className="flex gap-1 flex-shrink-0">
+          <button
+            onClick={onPhotos}
+            className="p-1.5 text-gray-400 hover:text-blue-500 rounded-lg transition-colors"
+            title="Фото зала"
+          >
+            📷
+          </button>
           <button
             onClick={onEdit}
             className="px-3 py-1.5 text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition-colors"
@@ -254,7 +329,6 @@ function MiniPreview({ hall }: { hall: Hall }) {
     return <div className="w-full h-full flex items-center justify-center text-gray-300 text-xs">Пустая схема</div>;
   }
 
-  const scale = Math.min(200 / fp.width, 80 / fp.height);
   const tables = fp.objects.filter((o: any) => o.type === 'table');
 
   return (

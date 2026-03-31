@@ -95,7 +95,7 @@ export class PublicApiService {
           select: {
             id: true, label: true, shape: true, minGuests: true, maxGuests: true,
             positionX: true, positionY: true, rotation: true, width: true, height: true,
-            comment: true, tags: true,
+            comment: true, tags: true, photos: true,
           },
         },
       },

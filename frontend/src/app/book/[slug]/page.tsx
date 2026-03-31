@@ -8,6 +8,7 @@ import type { Restaurant, Hall } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
 import { useBookingSocket } from '@/hooks/useBookingSocket';
 import { v4 as uuidv4 } from 'uuid';
+import PhotoGallery from '@/components/PhotoGallery';
 
 const BookingMap = dynamic(() => import('@/components/booking-map/BookingMap'), { ssr: false });
 
@@ -74,6 +75,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
   const [lockExpiresAt, setLockExpiresAt] = useState<Date | null>(null);
   const [lockTimeLeft, setLockTimeLeft]   = useState(0);
   const [lockError, setLockError]         = useState('');
+  const [galleryPhotos, setGalleryPhotos] = useState<string[] | null>(null);
 
   const dateScrollRef   = useRef<HTMLDivElement>(null);
   const queryClient     = useQueryClient();
@@ -505,6 +507,14 @@ export default function BookPage({ params }: { params: { slug: string } }) {
                         })}
                       </div>
                     )}
+                    {(selectedTable?.photos?.length ?? 0) > 0 && (
+                      <button
+                        onClick={() => setGalleryPhotos(selectedTable!.photos!)}
+                        className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                      >
+                        📷 Фото стола ({selectedTable!.photos!.length})
+                      </button>
+                    )}
                     {lockTimeLeft > 0 && (
                       <p className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
                         <span>🔒</span>
@@ -714,6 +724,15 @@ export default function BookPage({ params }: { params: { slug: string } }) {
             Сделать ещё одну бронь
           </button>
         </div>
+      )}
+
+      {/* Галерея фото стола */}
+      {galleryPhotos && (
+        <PhotoGallery
+          photos={galleryPhotos}
+          title={`Стол ${selectedTable?.label ?? ''}`}
+          onClose={() => setGalleryPhotos(null)}
+        />
       )}
     </div>
   );

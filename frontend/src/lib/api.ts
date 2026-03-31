@@ -155,6 +155,45 @@ export const hallsApi = {
     request(`/api/restaurant/halls/${id}`, { method: 'DELETE' }),
 };
 
+// ─── Uploads ──────────────────────────────────────────────────────────────────
+
+async function uploadFile(path: string, file: File): Promise<any> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
+  const form = new FormData();
+  form.append('file', file);
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || err?.message || `HTTP ${res.status}`);
+  }
+  const json = await res.json();
+  return json.data ?? json;
+}
+
+export const uploadsApi = {
+  uploadTablePhoto: (tableId: string, file: File) =>
+    uploadFile(`/api/uploads/tables/${tableId}/photo`, file),
+
+  deleteTablePhoto: (tableId: string, url: string) =>
+    request(`/api/uploads/tables/${tableId}/photo`, {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
+    }),
+
+  uploadHallPhoto: (hallId: string, file: File) =>
+    uploadFile(`/api/uploads/halls/${hallId}/photo`, file),
+
+  deleteHallPhoto: (hallId: string, url: string) =>
+    request(`/api/uploads/halls/${hallId}/photo`, {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
+    }),
+};
+
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
 export const tablesApi = {
