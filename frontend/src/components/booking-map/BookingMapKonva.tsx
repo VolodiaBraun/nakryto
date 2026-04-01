@@ -294,7 +294,8 @@ export default function BookingMapKonva({
               const isHovered = table.id === hoveredId;
               const isTagFiltered = !!tagFilter && !(table.tags ?? []).includes(tagFilter);
               const isDisabled = guestCount > table.maxGuests || guestCount < table.minGuests || isTagFiltered;
-              const isBooked = status === 'BOOKED' || status === 'LOCKED';
+              const isBooked = status === 'BOOKED';
+              const isLocked = status === 'LOCKED';
               const colors = getTableColor(table, status, isSelected, guestCount, tagFilter, darkMode);
               const cx = table.width / 2;
               const cy = table.height / 2;
@@ -348,13 +349,13 @@ export default function BookingMapKonva({
                     text={seatsLabel(table.minGuests, table.maxGuests)}
                     fontSize={Math.min(9, table.width / 9)} fill={colors.text} opacity={0.7} />
 
-                  {isBooked && (
+                  {(isBooked || isLocked) && (
                     <Text x={0} y={table.height - 16} width={table.width} align="center"
-                      text="✕" fontSize={12} fill={colors.text} />
+                      text={isLocked ? '🔒' : '✕'} fontSize={12} fill={colors.text} />
                   )}
 
                   {/* Иконки тегов */}
-                  {!isBooked && table.tags && table.tags.length > 0 && (
+                  {!isBooked && !isLocked && table.tags && table.tags.length > 0 && (
                     <Text x={0} y={cy + 18} width={table.width} align="center"
                       text={table.tags.slice(0, 4).map((id) => TABLE_TAGS.find((t) => t.id === id)?.icon ?? '').join(' ')}
                       fontSize={Math.min(12, table.width / 7)} opacity={isDisabled ? 0.4 : 0.85} />

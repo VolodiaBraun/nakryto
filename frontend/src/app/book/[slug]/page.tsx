@@ -95,6 +95,19 @@ export default function BookPage({ params }: { params: { slug: string } }) {
   const selectedDateRef = useRef(getTodayStr());
   const selectedTableRef = useRef<string | null>(null);
 
+  // При монтировании — снять устаревшую блокировку из предыдущего сеанса
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const stored = sessionStorage.getItem('nakryto_active_lock');
+    if (!stored) return;
+    try {
+      const { tableId, date, lockId } = JSON.parse(stored);
+      sessionStorage.removeItem('nakryto_active_lock');
+      publicApi.unlockTable(slug, tableId, date, lockId).catch(() => {});
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => { selectedDateRef.current  = selectedDate; },  [selectedDate]);
   useEffect(() => { selectedTableRef.current = selectedTableId; }, [selectedTableId]);
 
@@ -223,6 +236,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
   // ─── Обработчики ────────────────────────────────────────────────────────────
 
   const doUnlock = useCallback((tableId: string, date: string) => {
+    sessionStorage.removeItem('nakryto_active_lock');
     publicApi.unlockTable(slug, tableId, date, lockIdRef.current).catch(() => {});
   }, [slug]);
 
@@ -244,6 +258,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
     setLockError('');
     try {
       const result: any = await publicApi.lockTable(slug, tableId, date, lockIdRef.current);
+      sessionStorage.setItem('nakryto_active_lock', JSON.stringify({ tableId, date, lockId: lockIdRef.current }));
       setSelectedTableId(tableId);
       setSelectedTime(null);
       setLockExpiresAt(new Date(result.expiresAt));
@@ -286,6 +301,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
         notes: guestForm.notes || undefined,
         consentGiven: guestForm.consent,
       });
+      sessionStorage.removeItem('nakryto_active_lock');
       setBooking(result.data || result);
       setStep(2);
     } catch (err: any) {
