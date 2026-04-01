@@ -29,18 +29,30 @@ export class AuditLogService {
     page: number;
     limit: number;
     restaurantId?: string;
+    restaurantName?: string;
     action?: string;
     status?: string;
     dateFrom?: string;
     dateTo?: string;
   }) {
-    const { page, limit, restaurantId, action, status, dateFrom, dateTo } = opts;
+    const { page, limit, restaurantId, restaurantName, action, status, dateFrom, dateTo } = opts;
     const skip = (page - 1) * limit;
 
     const where: any = {};
-    if (restaurantId) where.restaurantId = restaurantId;
-    if (action)       where.action = { contains: action };
-    if (status)       where.status = status;
+
+    // Фильтр по названию: ищем рестораны по имени, берём их id
+    if (restaurantName) {
+      const matched = await this.prisma.restaurant.findMany({
+        where: { name: { contains: restaurantName, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      where.restaurantId = { in: matched.map((r) => r.id) };
+    } else if (restaurantId) {
+      where.restaurantId = restaurantId;
+    }
+
+    if (action)  where.action = { contains: action };
+    if (status)  where.status = status;
     if (dateFrom || dateTo) {
       where.createdAt = {};
       if (dateFrom) where.createdAt.gte = new Date(dateFrom);
@@ -57,6 +69,21 @@ export class AuditLogService {
       this.prisma.auditLog.count({ where }),
     ]);
 
-    return { rows, total, page, limit };
+    // Обогащаем строки названием ресторана
+    const uniqueIds = [...new Set(rows.map((r) => r.restaurantId).filter(Boolean))] as string[];
+    const restaurants = uniqueIds.length
+      ? await this.prisma.restaurant.findMany({
+          where: { id: { in: uniqueIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const nameMap = Object.fromEntries(restaurants.map((r) => [r.id, r.name]));
+
+    const enriched = rows.map((r) => ({
+      ...r,
+      restaurantName: r.restaurantId ? (nameMap[r.restaurantId] ?? null) : null,
+    }));
+
+    return { rows: enriched, total, page, limit };
   }
 }

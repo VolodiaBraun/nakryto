@@ -258,7 +258,7 @@ export default function SuperAdminPage() {
   const [logsTotal, setLogsTotal] = useState(0);
   const [logsPage, setLogsPage] = useState(1);
   const [logsLoading, setLogsLoading] = useState(false);
-  const [logsFilter, setLogsFilter] = useState({ action: '', status: '', dateFrom: '', dateTo: '' });
+  const [logsFilter, setLogsFilter] = useState({ action: '', status: '', restaurantName: '', dateFrom: '', dateTo: '' });
 
   const loadLogs = useCallback(async (page = 1, filter = logsFilter) => {
     setLogsLoading(true);
@@ -266,6 +266,7 @@ export default function SuperAdminPage() {
       const params = new URLSearchParams({ page: String(page), limit: '50' });
       if (filter.action) params.set('action', filter.action);
       if (filter.status) params.set('status', filter.status);
+      if (filter.restaurantName) params.set('restaurantName', filter.restaurantName);
       if (filter.dateFrom) params.set('dateFrom', filter.dateFrom);
       if (filter.dateTo) params.set('dateTo', filter.dateTo);
       const data = await superadminApi.getAuditLogs(params.toString()) as any;
@@ -962,6 +963,15 @@ export default function SuperAdminPage() {
             {/* Фильтры */}
             <div className="flex flex-wrap gap-3 items-end">
               <div>
+                <label className="block text-xs text-gray-400 mb-1">Ресторан</label>
+                <input
+                  value={logsFilter.restaurantName}
+                  onChange={(e) => setLogsFilter((f) => ({ ...f, restaurantName: e.target.value }))}
+                  placeholder="Название ресторана"
+                  className="bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-1.5 w-44 focus:outline-none focus:border-gray-500"
+                />
+              </div>
+              <div>
                 <label className="block text-xs text-gray-400 mb-1">Действие</label>
                 <input
                   value={logsFilter.action}
@@ -1008,7 +1018,7 @@ export default function SuperAdminPage() {
               </button>
               <button
                 onClick={() => {
-                  const f = { action: '', status: '', dateFrom: '', dateTo: '' };
+                  const f = { action: '', status: '', restaurantName: '', dateFrom: '', dateTo: '' };
                   setLogsFilter(f);
                   loadLogs(1, f);
                 }}
@@ -1048,8 +1058,8 @@ export default function SuperAdminPage() {
                           <div>{log.actorType}</div>
                           {log.actorEmail && <div className="text-gray-500 truncate max-w-[140px]">{log.actorEmail}</div>}
                         </td>
-                        <td className="px-3 py-2 text-xs text-gray-400 truncate max-w-[120px]">
-                          {log.restaurantId ? log.restaurantId.slice(0, 8) + '…' : '—'}
+                        <td className="px-3 py-2 text-xs text-gray-300 max-w-[150px]">
+                          {log.restaurantName ?? (log.restaurantId ? log.restaurantId.slice(0, 8) + '…' : '—')}
                         </td>
                         <td className="px-3 py-2">
                           <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${

@@ -165,11 +165,12 @@ export class SuperAdminController {
     @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('restaurantId') restaurantId?: string,
+    @Query('restaurantName') restaurantName?: string,
     @Query('action') action?: string,
     @Query('status') status?: string,
     @Query('dateFrom') dateFrom?: string,
     @Query('dateTo') dateTo?: string,
   ) {
-    return this.auditLogService.findAll({ page, limit, restaurantId, action, status, dateFrom, dateTo });
+    return this.auditLogService.findAll({ page, limit, restaurantId, restaurantName, action, status, dateFrom, dateTo });
   }
 }
