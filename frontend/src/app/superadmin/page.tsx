@@ -960,6 +960,44 @@ export default function SuperAdminPage() {
         {/* ─── Вкладка: Логи ───────────────────────────────────────────────── */}
         {activeTab === 'logs' && (
           <div className="space-y-4">
+            {/* Легенда действий */}
+            <details className="bg-gray-900 border border-gray-800 rounded-xl">
+              <summary className="px-4 py-3 text-sm font-medium text-gray-300 cursor-pointer select-none hover:text-white">
+                📋 Справка по действиям
+              </summary>
+              <div className="px-4 pb-4 pt-1">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500 border-b border-gray-800">
+                      <th className="text-left py-1.5 pr-4 font-medium w-56">Действие</th>
+                      <th className="text-left py-1.5 pr-4 font-medium w-24">Актор</th>
+                      <th className="text-left py-1.5 font-medium">Описание</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-800/50">
+                    {([
+                      ['auth.register',                 'user',        'Регистрация нового ресторана и владельца'],
+                      ['auth.login',                    'user',        'Успешный вход в дашборд'],
+                      ['auth.login_failed',             'user',        'Неудачная попытка входа (неверный пароль или email)'],
+                      ['booking.create',                'user/guest',  'Создание брони (вручную сотрудником или онлайн гостем)'],
+                      ['booking.status_update',         'user',        'Изменение статуса брони (CONFIRMED, SEATED, CANCELLED и т.д.)'],
+                      ['booking.cancel_guest',          'guest',       'Отмена брони гостем по ссылке из письма'],
+                      ['superadmin.update_plan',        'superadmin',  'Смена тарифного плана ресторана'],
+                      ['superadmin.balance_adjustment', 'superadmin',  'Ручная корректировка баланса владельца'],
+                    ] as [string, string, string][]).map(([action, actor, desc]) => (
+                      <tr key={action} className="hover:bg-gray-800/30">
+                        <td className="py-1.5 pr-4">
+                          <span className="font-mono text-blue-300">{action}</span>
+                        </td>
+                        <td className="py-1.5 pr-4 text-gray-400">{actor}</td>
+                        <td className="py-1.5 text-gray-400">{desc}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+
             {/* Фильтры */}
             <div className="flex flex-wrap gap-3 items-end">
               <div>
