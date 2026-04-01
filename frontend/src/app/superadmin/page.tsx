@@ -58,7 +58,7 @@ interface LandingSettings {
   personalDataPolicy?: string;
 }
 
-type Tab = 'restaurants' | 'landing' | 'content' | 'referrers' | 'withdrawals' | 'plan-config';
+type Tab = 'restaurants' | 'landing' | 'content' | 'referrers' | 'withdrawals' | 'plan-config' | 'logs';
 
 interface Referrer {
   id: string;
@@ -253,6 +253,32 @@ export default function SuperAdminPage() {
     if (activeTab === 'withdrawals') loadWithdrawals();
   }, [activeTab, loadReferralSettings, loadReferrers, loadWithdrawals]);
 
+  // ─── Логи ──────────────────────────────────────────────────────────────────
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsTotal, setLogsTotal] = useState(0);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsFilter, setLogsFilter] = useState({ action: '', status: '', dateFrom: '', dateTo: '' });
+
+  const loadLogs = useCallback(async (page = 1, filter = logsFilter) => {
+    setLogsLoading(true);
+    try {
+      const params = new URLSearchParams({ page: String(page), limit: '50' });
+      if (filter.action) params.set('action', filter.action);
+      if (filter.status) params.set('status', filter.status);
+      if (filter.dateFrom) params.set('dateFrom', filter.dateFrom);
+      if (filter.dateTo) params.set('dateTo', filter.dateTo);
+      const data = await superadminApi.getAuditLogs(params.toString()) as any;
+      setLogs(data.rows);
+      setLogsTotal(data.total);
+      setLogsPage(page);
+    } catch (err) { handleAuthError(err); } finally { setLogsLoading(false); }
+  }, [logsFilter, handleAuthError]);
+
+  useEffect(() => {
+    if (activeTab === 'logs') loadLogs(1);
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function handleSaveReferralSettings() {
     if (!referralSettings) return;
     setReferralSaving(true);
@@ -383,7 +409,7 @@ export default function SuperAdminPage() {
         <div className="flex items-center gap-6">
           <div className="text-sm font-semibold text-orange-400">Накрыто — Суперадмин</div>
           <nav className="flex gap-1">
-            {([['restaurants', 'Рестораны'], ['landing', 'Лендинг'], ['content', 'Контент'], ['referrers', 'Рефералы'], ['withdrawals', 'Выводы'], ['plan-config', 'Тарифы']] as [Tab, string][]).map(([id, label]) => (
+            {([['restaurants', 'Рестораны'], ['landing', 'Лендинг'], ['content', 'Контент'], ['referrers', 'Рефералы'], ['withdrawals', 'Выводы'], ['plan-config', 'Тарифы'], ['logs', 'Логи']] as [Tab, string][]).map(([id, label]) => (
               <button
                 key={id}
                 onClick={() => setActiveTab(id)}
@@ -926,6 +952,155 @@ export default function SuperAdminPage() {
                   </p>
                 </div>
               </>
+            )}
+          </div>
+        )}
+
+        {/* ─── Вкладка: Логи ───────────────────────────────────────────────── */}
+        {activeTab === 'logs' && (
+          <div className="space-y-4">
+            {/* Фильтры */}
+            <div className="flex flex-wrap gap-3 items-end">
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Действие</label>
+                <input
+                  value={logsFilter.action}
+                  onChange={(e) => setLogsFilter((f) => ({ ...f, action: e.target.value }))}
+                  placeholder="booking.create"
+                  className="bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-1.5 w-44 focus:outline-none focus:border-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Статус</label>
+                <select
+                  value={logsFilter.status}
+                  onChange={(e) => setLogsFilter((f) => ({ ...f, status: e.target.value }))}
+                  className="bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-gray-500"
+                >
+                  <option value="">Все</option>
+                  <option value="ok">ok</option>
+                  <option value="error">error</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">С даты</label>
+                <input
+                  type="date"
+                  value={logsFilter.dateFrom}
+                  onChange={(e) => setLogsFilter((f) => ({ ...f, dateFrom: e.target.value }))}
+                  className="bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">По дату</label>
+                <input
+                  type="date"
+                  value={logsFilter.dateTo}
+                  onChange={(e) => setLogsFilter((f) => ({ ...f, dateTo: e.target.value }))}
+                  className="bg-gray-800 border border-gray-700 text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-gray-500"
+                />
+              </div>
+              <button
+                onClick={() => loadLogs(1, logsFilter)}
+                className="px-4 py-1.5 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors"
+              >
+                Применить
+              </button>
+              <button
+                onClick={() => {
+                  const f = { action: '', status: '', dateFrom: '', dateTo: '' };
+                  setLogsFilter(f);
+                  loadLogs(1, f);
+                }}
+                className="px-4 py-1.5 text-sm bg-gray-700 hover:bg-gray-600 text-white rounded-lg transition-colors"
+              >
+                Сбросить
+              </button>
+              <span className="text-xs text-gray-500 ml-auto">Всего: {logsTotal}</span>
+            </div>
+
+            {/* Таблица */}
+            {logsLoading ? (
+              <div className="text-gray-500 py-12 text-center">Загрузка...</div>
+            ) : logs.length === 0 ? (
+              <div className="text-gray-500 py-12 text-center">Нет записей</div>
+            ) : (
+              <div className="overflow-x-auto rounded-xl border border-gray-800">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-800 text-xs text-gray-400">
+                      <th className="text-left px-3 py-2.5 font-medium">Время</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Действие</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Актор</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Ресторан</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Статус</th>
+                      <th className="text-left px-3 py-2.5 font-medium">Детали</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map((log) => (
+                      <tr key={log.id} className="border-b border-gray-800/50 hover:bg-gray-900/50">
+                        <td className="px-3 py-2 text-gray-400 whitespace-nowrap text-xs">
+                          {new Date(log.createdAt).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'medium' })}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-xs text-blue-300">{log.action}</td>
+                        <td className="px-3 py-2 text-xs text-gray-300">
+                          <div>{log.actorType}</div>
+                          {log.actorEmail && <div className="text-gray-500 truncate max-w-[140px]">{log.actorEmail}</div>}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-400 truncate max-w-[120px]">
+                          {log.restaurantId ? log.restaurantId.slice(0, 8) + '…' : '—'}
+                        </td>
+                        <td className="px-3 py-2">
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                            log.status === 'ok' ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'
+                          }`}>
+                            {log.status}
+                          </span>
+                          {log.errorMessage && (
+                            <div className="text-xs text-red-400 mt-0.5 max-w-[160px] truncate" title={log.errorMessage}>
+                              {log.errorMessage}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-xs text-gray-500 max-w-[200px]">
+                          {log.meta ? (
+                            <details>
+                              <summary className="cursor-pointer hover:text-gray-300">показать</summary>
+                              <pre className="mt-1 text-xs text-gray-400 whitespace-pre-wrap break-all">
+                                {JSON.stringify(log.meta, null, 2)}
+                              </pre>
+                            </details>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Пагинация */}
+            {logsTotal > 50 && (
+              <div className="flex gap-2 justify-center pt-2">
+                <button
+                  disabled={logsPage === 1}
+                  onClick={() => loadLogs(logsPage - 1)}
+                  className="px-3 py-1 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded-lg"
+                >
+                  ← Назад
+                </button>
+                <span className="px-3 py-1 text-sm text-gray-400">
+                  {logsPage} / {Math.ceil(logsTotal / 50)}
+                </span>
+                <button
+                  disabled={logsPage >= Math.ceil(logsTotal / 50)}
+                  onClick={() => loadLogs(logsPage + 1)}
+                  className="px-3 py-1 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 rounded-lg"
+                >
+                  Вперёд →
+                </button>
+              </div>
             )}
           </div>
         )}

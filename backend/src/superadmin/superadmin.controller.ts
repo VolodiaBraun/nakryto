@@ -12,13 +12,17 @@ import {
   HttpCode,
 } from '@nestjs/common';
 import { SuperAdminService } from './superadmin.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { SuperAdminJwtGuard } from './guards/superadmin-jwt.guard';
 import { LoginSuperAdminDto } from './dto/login-superadmin.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
 
 @Controller('api/superadmin')
 export class SuperAdminController {
-  constructor(private readonly superAdminService: SuperAdminService) {}
+  constructor(
+    private readonly superAdminService: SuperAdminService,
+    private readonly auditLogService: AuditLogService,
+  ) {}
 
   @Post('auth/login')
   login(@Body() dto: LoginSuperAdminDto) {
@@ -153,5 +157,19 @@ export class SuperAdminController {
     prices?: Record<string, number>;
   }) {
     return this.superAdminService.updatePlanLimitsAndPrices(data);
+  }
+
+  @UseGuards(SuperAdminJwtGuard)
+  @Get('audit-logs')
+  getAuditLogs(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
+    @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
+    @Query('restaurantId') restaurantId?: string,
+    @Query('action') action?: string,
+    @Query('status') status?: string,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+  ) {
+    return this.auditLogService.findAll({ page, limit, restaurantId, action, status, dateFrom, dateTo });
   }
 }

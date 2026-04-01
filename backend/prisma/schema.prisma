@@ -330,6 +330,29 @@ enum BalanceTransactionType {
   REFUND
 }
 
+// ─── Аудит-лог действий ──────────────────────────────────────────────────────
+
+model AuditLog {
+  id           String    @id @default(uuid())
+  action       String    // "auth.register", "booking.create", "booking.status_update", etc.
+  actorType    String    // "user" | "guest" | "superadmin"
+  actorId      String?   // userId или superadminId
+  actorEmail   String?
+  restaurantId String?
+  entityId     String?   // id затронутой сущности (bookingId, restaurantId, ...)
+  status       String    // "ok" | "error"
+  errorMessage String?
+  meta         Json?     // любые доп. данные: статус брони, plan, гость и т.д.
+  ip           String?
+  createdAt    DateTime  @default(now())
+
+  @@index([createdAt(sort: Desc)])
+  @@index([restaurantId])
+  @@index([action])
+  @@index([status])
+  @@map("audit_logs")
+}
+
 // ─── Лог уведомлений ─────────────────────────────────────────────────────────
 
 model NotificationLog {

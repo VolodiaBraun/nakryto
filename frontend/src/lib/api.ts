@@ -524,6 +524,9 @@ export const superadminApi = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  getAuditLogs: (queryString: string) =>
+    superadminRequest(`/api/superadmin/audit-logs?${queryString}`),
 };
 
 export { ApiError };

@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -26,6 +27,7 @@ export class AuthService {
     private jwt: JwtService,
     private config: ConfigService,
     private notifications: NotificationsService,
+    private auditLog: AuditLogService,
     @Inject(REDIS_CLIENT) private redis: Redis,
   ) {}
 
@@ -99,6 +101,16 @@ export class AuthService {
       .catch(() => {});
 
     const tokens = await this.generateTokens(result.user.id, result.user.email, result.restaurant.id, result.user.role);
+    this.auditLog.log({
+      action: 'auth.register',
+      actorType: 'user',
+      actorId: result.user.id,
+      actorEmail: result.user.email,
+      restaurantId: result.restaurant.id,
+      entityId: result.user.id,
+      status: 'ok',
+      meta: { restaurantName: result.restaurant.name, slug: result.restaurant.slug },
+    });
     return { user: this.sanitizeUser(result.user), restaurant: result.restaurant, ...tokens };
   }
 
@@ -108,11 +120,41 @@ export class AuthService {
       include: { restaurant: true },
     });
 
-    if (!user) throw new UnauthorizedException('Неверный email или пароль');
+    if (!user) {
+      this.auditLog.log({
+        action: 'auth.login_failed',
+        actorType: 'user',
+        actorEmail: dto.email,
+        status: 'error',
+        errorMessage: 'Пользователь не найден',
+      });
+      throw new UnauthorizedException('Неверный email или пароль');
+    }
 
     const passwordMatch = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!passwordMatch) throw new UnauthorizedException('Неверный email или пароль');
+    if (!passwordMatch) {
+      this.auditLog.log({
+        action: 'auth.login_failed',
+        actorType: 'user',
+        actorId: user.id,
+        actorEmail: user.email,
+        restaurantId: user.restaurantId,
+        status: 'error',
+        errorMessage: 'Неверный пароль',
+      });
+      throw new UnauthorizedException('Неверный email или пароль');
+    }
 
+    this.auditLog.log({
+      action: 'auth.login',
+      actorType: 'user',
+      actorId: user.id,
+      actorEmail: user.email,
+      restaurantId: user.restaurantId,
+      entityId: user.id,
+      status: 'ok',
+      meta: { role: user.role },
+    });
     const tokens = await this.generateTokens(user.id, user.email, user.restaurantId, user.role);
     return { user: this.sanitizeUser(user), restaurant: user.restaurant, ...tokens };
   }

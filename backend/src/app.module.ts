@@ -19,6 +19,7 @@ import { ReferralModule } from './referral/referral.module';
 import { BillingModule } from './billing/billing.module';
 import { PlanLimitsModule } from './plan-limits/plan-limits.module';
 import { UploadsModule } from './uploads/uploads.module';
+import { AuditLogModule } from './audit-log/audit-log.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { UploadsModule } from './uploads/uploads.module';
     BillingModule,
     PlanLimitsModule,
     UploadsModule,
+    AuditLogModule,
   ],
 })
 export class AppModule {}

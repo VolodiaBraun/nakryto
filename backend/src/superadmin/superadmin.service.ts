@@ -4,6 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlanLimitsService } from '../plan-limits/plan-limits.service';
 import { ReferralService } from '../referral/referral.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { Plan } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { DEFAULT_LANDING_SETTINGS } from './landing-defaults';
@@ -16,6 +17,7 @@ export class SuperAdminService {
     private config: ConfigService,
     private planLimits: PlanLimitsService,
     private referralService: ReferralService,
+    private auditLog: AuditLogService,
   ) {}
 
   async login(email: string, password: string) {
@@ -144,6 +146,14 @@ export class SuperAdminService {
       }
     }
 
+    this.auditLog.log({
+      action: 'superadmin.update_plan',
+      actorType: 'superadmin',
+      restaurantId,
+      entityId: restaurantId,
+      status: 'ok',
+      meta: { oldPlan, newPlan: plan, restaurantName: restaurant.name },
+    });
     return updated;
   }
 
@@ -352,7 +362,16 @@ export class SuperAdminService {
 
     const updated = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, name: true, email: true, balance: true },
+      select: { id: true, name: true, email: true, balance: true, restaurantId: true },
+    });
+    this.auditLog.log({
+      action: 'superadmin.balance_adjustment',
+      actorType: 'superadmin',
+      actorId: userId,
+      restaurantId: updated?.restaurantId ?? undefined,
+      entityId: userId,
+      status: 'ok',
+      meta: { amount, description, newBalance: updated?.balance },
     });
     return updated;
   }

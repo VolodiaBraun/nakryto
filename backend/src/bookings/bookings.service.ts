@@ -10,6 +10,7 @@ import { PlanLimitsService } from '../plan-limits/plan-limits.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { MaxService } from '../max/max.service';
+import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
@@ -25,6 +26,7 @@ export class BookingsService {
     private notifications: NotificationsService,
     private telegram: TelegramService,
     private max: MaxService,
+    private auditLog: AuditLogService,
   ) {}
 
   private notify(
@@ -221,6 +223,21 @@ export class BookingsService {
         this.notifications.notifyGuestBookingReceived(booking.id).catch(() => {});
       }
     }
+    this.auditLog.log({
+      action: 'booking.create',
+      actorType: source === 'ONLINE' ? 'guest' : 'user',
+      restaurantId,
+      entityId: booking.id,
+      status: 'ok',
+      meta: {
+        source,
+        guestName: dto.guestName,
+        guestCount: dto.guestCount,
+        tableId: dto.tableId,
+        startsAt: dto.startsAt,
+        bookingStatus: booking.status,
+      },
+    });
     return booking;
   }
 
@@ -287,6 +304,15 @@ export class BookingsService {
 
     const event = dto.status === 'CANCELLED' ? 'booking_cancelled' : 'booking_created';
     this.notify((updated as any).restaurant.slug, updated.startsAt, event, updated.tableId);
+    this.auditLog.log({
+      action: 'booking.status_update',
+      actorType: 'user',
+      actorId: actorId,
+      restaurantId,
+      entityId: id,
+      status: 'ok',
+      meta: { newStatus: dto.status },
+    });
     return updated;
   }
 
@@ -305,6 +331,14 @@ export class BookingsService {
       include: { restaurant: true },
     });
     this.notify((cancelled as any).restaurant.slug, cancelled.startsAt, 'booking_cancelled', cancelled.tableId);
+    this.auditLog.log({
+      action: 'booking.cancel_guest',
+      actorType: 'guest',
+      restaurantId: cancelled.restaurantId,
+      entityId: cancelled.id,
+      status: 'ok',
+      meta: { token },
+    });
     return cancelled;
   }
 
