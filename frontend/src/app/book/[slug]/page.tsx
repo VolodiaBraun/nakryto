@@ -383,7 +383,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
               onClick={() => setMiniGallery({ photos: currentHall.photos, title: currentHall.name ?? 'Фото зала' })}
               className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium transition-colors"
             >
-              📷 <span className="hidden sm:inline">Фото</span> {currentHall.photos.length}
+              📷 Фото зала
             </button>
           )}
 
@@ -517,7 +517,7 @@ export default function BookPage({ params }: { params: { slug: string } }) {
                           })}
                           className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
                         >
-                          📷 {selectedTable!.photos!.length}
+                          📷 Фото стола
                         </button>
                       )}
                     </div>
