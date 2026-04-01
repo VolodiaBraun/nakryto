@@ -9,6 +9,7 @@ import { TABLE_TAGS } from '@/lib/tableTags';
 import { useBookingSocket } from '@/hooks/useBookingSocket';
 import { v4 as uuidv4 } from 'uuid';
 import PhotoGallery from '@/components/PhotoGallery';
+import MiniGallery from '@/components/MiniGallery';
 
 const BookingMap = dynamic(() => import('@/components/booking-map/BookingMap'), { ssr: false });
 
@@ -75,7 +76,10 @@ export default function BookPage({ params }: { params: { slug: string } }) {
   const [lockExpiresAt, setLockExpiresAt] = useState<Date | null>(null);
   const [lockTimeLeft, setLockTimeLeft]   = useState(0);
   const [lockError, setLockError]         = useState('');
-  const [galleryPhotos, setGalleryPhotos] = useState<string[] | null>(null);
+
+  // Галереи: miniGallery — попап с сеткой, lightbox — полноэкранный просмотр
+  const [miniGallery, setMiniGallery] = useState<{ photos: string[]; title: string } | null>(null);
+  const [lightbox, setLightbox] = useState<{ photos: string[]; title: string; index: number } | null>(null);
 
   const dateScrollRef   = useRef<HTMLDivElement>(null);
   const queryClient     = useQueryClient();
@@ -373,6 +377,16 @@ export default function BookPage({ params }: { params: { slug: string } }) {
             )}
           </div>
 
+          {/* Кнопка фото зала */}
+          {step === 0 && (currentHall?.photos?.length ?? 0) > 0 && (
+            <button
+              onClick={() => setMiniGallery({ photos: currentHall.photos, title: currentHall.name ?? 'Фото зала' })}
+              className="flex-shrink-0 flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium transition-colors"
+            >
+              📷 <span className="hidden sm:inline">Фото</span> {currentHall.photos.length}
+            </button>
+          )}
+
           {/* Live-индикатор */}
           <div className="flex-shrink-0 flex items-center gap-1" title={connected ? 'Обновления в реальном времени' : 'Нет соединения'}>
             <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-gray-300'}`} />
@@ -485,15 +499,28 @@ export default function BookPage({ params }: { params: { slug: string } }) {
                 {/* Заголовок панели */}
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <p className="font-semibold text-gray-900">
-                      Стол {selectedTable?.label ?? '—'}
-                      {selectedTable && (
-                        <span className="text-sm font-normal text-gray-500 ml-2">
-                          {selectedTable.minGuests}–{selectedTable.maxGuests} гостей
-                          {selectedTable.comment ? ` · ${selectedTable.comment}` : ''}
-                        </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="font-semibold text-gray-900">
+                        Стол {selectedTable?.label ?? '—'}
+                        {selectedTable && (
+                          <span className="text-sm font-normal text-gray-500 ml-2">
+                            {selectedTable.minGuests}–{selectedTable.maxGuests} гостей
+                            {selectedTable.comment ? ` · ${selectedTable.comment}` : ''}
+                          </span>
+                        )}
+                      </p>
+                      {(selectedTable?.photos?.length ?? 0) > 0 && (
+                        <button
+                          onClick={() => setMiniGallery({
+                            photos: selectedTable!.photos!,
+                            title: `Стол ${selectedTable?.label ?? ''}`,
+                          })}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
+                        >
+                          📷 {selectedTable!.photos!.length}
+                        </button>
                       )}
-                    </p>
+                    </div>
                     {selectedTableTags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {selectedTableTags.map((tagId) => {
@@ -506,14 +533,6 @@ export default function BookPage({ params }: { params: { slug: string } }) {
                           );
                         })}
                       </div>
-                    )}
-                    {(selectedTable?.photos?.length ?? 0) > 0 && (
-                      <button
-                        onClick={() => setGalleryPhotos(selectedTable!.photos!)}
-                        className="mt-1.5 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition-colors"
-                      >
-                        📷 Фото стола ({selectedTable!.photos!.length})
-                      </button>
                     )}
                     {lockTimeLeft > 0 && (
                       <p className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
@@ -726,12 +745,23 @@ export default function BookPage({ params }: { params: { slug: string } }) {
         </div>
       )}
 
-      {/* Галерея фото стола */}
-      {galleryPhotos && (
+      {/* Попап-миниатюры */}
+      {miniGallery && (
+        <MiniGallery
+          photos={miniGallery.photos}
+          title={miniGallery.title}
+          onClose={() => setMiniGallery(null)}
+          onOpenPhoto={(i) => setLightbox({ photos: miniGallery.photos, title: miniGallery.title, index: i })}
+        />
+      )}
+
+      {/* Полноэкранный просмотр */}
+      {lightbox && (
         <PhotoGallery
-          photos={galleryPhotos}
-          title={`Стол ${selectedTable?.label ?? ''}`}
-          onClose={() => setGalleryPhotos(null)}
+          photos={lightbox.photos}
+          title={lightbox.title}
+          initialIndex={lightbox.index}
+          onClose={() => setLightbox(null)}
         />
       )}
     </div>

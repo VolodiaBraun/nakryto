@@ -6,10 +6,11 @@ interface PhotoGalleryProps {
   photos: string[];
   onClose: () => void;
   title?: string;
+  initialIndex?: number;
 }
 
-export default function PhotoGallery({ photos, onClose, title }: PhotoGalleryProps) {
-  const [index, setIndex] = useState(0);
+export default function PhotoGallery({ photos, onClose, title, initialIndex = 0 }: PhotoGalleryProps) {
+  const [index, setIndex] = useState(initialIndex);
 
   const prev = useCallback(() => setIndex((i) => (i === 0 ? photos.length - 1 : i - 1)), [photos.length]);
   const next = useCallback(() => setIndex((i) => (i === photos.length - 1 ? 0 : i + 1)), [photos.length]);
