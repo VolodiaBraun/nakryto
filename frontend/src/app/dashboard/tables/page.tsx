@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { hallsApi, bookingsApi, closedPeriodsApi, publicApi } from '@/lib/api';
+import { hallsApi, bookingsApi, closedPeriodsApi, publicApi, uploadsApi } from '@/lib/api';
+import PhotoUploader from '@/components/PhotoUploader';
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, formatDate, formatTime } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
 import { useBookingSocket } from '@/hooks/useBookingSocket';
@@ -89,6 +90,9 @@ export default function TablesPage() {
   // Добавление периода для стола
   const [periodForm, setPeriodForm] = useState({ startsAt: '', endsAt: '', reason: '' });
   const [showPeriodForm, setShowPeriodForm] = useState(false);
+
+  // Фото стола
+  const [uploadingTable, setUploadingTable] = useState(false);
 
   // Создание брони вручную
   const [bookingModal, setBookingModal] = useState(false);
@@ -250,6 +254,29 @@ export default function TablesPage() {
     });
   };
 
+  const handleUploadTablePhoto = async (file: File) => {
+    if (!selectedTableId) return;
+    setUploadingTable(true);
+    try {
+      await uploadsApi.uploadTablePhoto(selectedTableId, file);
+      qc.invalidateQueries({ queryKey: ['halls'] });
+    } catch (err: any) {
+      alert(err.message || 'Ошибка загрузки');
+    } finally {
+      setUploadingTable(false);
+    }
+  };
+
+  const handleDeleteTablePhoto = async (url: string) => {
+    if (!selectedTableId || !confirm('Удалить фото?')) return;
+    try {
+      await uploadsApi.deleteTablePhoto(selectedTableId, url);
+      qc.invalidateQueries({ queryKey: ['halls'] });
+    } catch (err: any) {
+      alert(err.message || 'Ошибка удаления');
+    }
+  };
+
   const handleCreateBooking = () => {
     if (!selectedTableId || !newBooking.date || !newBooking.time || !newBooking.guestName || !newBooking.guestPhone) return;
     const snappedTime = snapTo5(newBooking.time);
@@ -391,6 +418,18 @@ export default function TablesPage() {
               >
                 + Добавить бронь
               </button>
+            </div>
+
+            {/* ── Фото стола ── */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <PhotoUploader
+                photos={selectedTable.photos ?? []}
+                maxPhotos={5}
+                uploading={uploadingTable}
+                onUpload={handleUploadTablePhoto}
+                onDelete={handleDeleteTablePhoto}
+                label="Фотографии стола (до 5 шт)"
+              />
             </div>
 
             {/* ── Закрытые периоды ── */}

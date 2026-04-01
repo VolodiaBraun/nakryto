@@ -133,6 +133,7 @@ model Hall {
   name         String
   // Konva.js JSON: { width, height, objects: [...] }
   floorPlan    Json       @default("{\"width\":800,\"height\":600,\"objects\":[]}")
+  photos       String[]   @default([])
   sortOrder    Int        @default(0)
   isActive     Boolean    @default(true)
   createdAt    DateTime   @default(now())
@@ -162,6 +163,7 @@ model Table {
   height    Float      @default(80)
   comment   String?
   tags      String[]   @default([])
+  photos    String[]   @default([])
   isActive  Boolean    @default(true)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt

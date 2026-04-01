@@ -155,6 +155,65 @@ export const hallsApi = {
     request(`/api/restaurant/halls/${id}`, { method: 'DELETE' }),
 };
 
+// ─── Uploads ──────────────────────────────────────────────────────────────────
+
+/** Двухшаговая загрузка: 1) presign на бэкенде, 2) PUT напрямую в S3, 3) сохранить URL */
+async function uploadViaPresign(
+  presignPath: string,
+  savePath: string,
+  file: File,
+): Promise<any> {
+  // Шаг 1: получаем presigned URL
+  const { uploadUrl, publicUrl } = await request<{ uploadUrl: string; publicUrl: string }>(
+    `${presignPath}?contentType=${encodeURIComponent(file.type)}`,
+    { method: 'POST' },
+  );
+
+  // Шаг 2: загружаем файл напрямую в S3
+  const s3Res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file,
+  });
+  if (!s3Res.ok) {
+    throw new Error(`S3 upload failed: ${s3Res.status}`);
+  }
+
+  // Шаг 3: сохраняем URL в БД
+  return request(savePath, {
+    method: 'POST',
+    body: JSON.stringify({ url: publicUrl }),
+  });
+}
+
+export const uploadsApi = {
+  uploadTablePhoto: (tableId: string, file: File) =>
+    uploadViaPresign(
+      `/api/uploads/tables/${tableId}/presign`,
+      `/api/uploads/tables/${tableId}/photo`,
+      file,
+    ),
+
+  deleteTablePhoto: (tableId: string, url: string) =>
+    request(`/api/uploads/tables/${tableId}/photo`, {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
+    }),
+
+  uploadHallPhoto: (hallId: string, file: File) =>
+    uploadViaPresign(
+      `/api/uploads/halls/${hallId}/presign`,
+      `/api/uploads/halls/${hallId}/photo`,
+      file,
+    ),
+
+  deleteHallPhoto: (hallId: string, url: string) =>
+    request(`/api/uploads/halls/${hallId}/photo`, {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
+    }),
+};
+
 // ─── Tables ───────────────────────────────────────────────────────────────────
 
 export const tablesApi = {

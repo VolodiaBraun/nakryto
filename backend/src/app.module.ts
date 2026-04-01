@@ -18,6 +18,7 @@ import { MaxModule } from './max/max.module';
 import { ReferralModule } from './referral/referral.module';
 import { BillingModule } from './billing/billing.module';
 import { PlanLimitsModule } from './plan-limits/plan-limits.module';
+import { UploadsModule } from './uploads/uploads.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { PlanLimitsModule } from './plan-limits/plan-limits.module';
     ReferralModule,
     BillingModule,
     PlanLimitsModule,
+    UploadsModule,
   ],
 })
 export class AppModule {}

@@ -72,6 +72,7 @@ export interface Hall {
   restaurantId: string;
   name: string;
   floorPlan: FloorPlan;
+  photos?: string[];
   sortOrder: number;
   isActive: boolean;
   tables: Table[];
@@ -130,6 +131,7 @@ export interface Table {
   height: number;
   comment?: string;
   tags?: string[];
+  photos?: string[];
   isActive: boolean;
 }
 
