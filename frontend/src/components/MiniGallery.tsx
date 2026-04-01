@@ -33,7 +33,7 @@ export default function MiniGallery({ photos, title, onClose, onOpenPhoto }: Min
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
           <span className="font-semibold text-gray-900 text-sm">
-            {title ?? 'Фото'} <span className="text-gray-400 font-normal">· {photos.length} шт.</span>
+            {title ?? 'Фото'}
           </span>
           <button
             onClick={onClose}
