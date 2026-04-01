@@ -1,15 +1,10 @@
 import {
-  Controller, Post, Delete, Param, Body, UseGuards,
-  UseInterceptors, UploadedFile,
+  Controller, Post, Delete, Param, Body, Query, UseGuards,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { UploadsService } from './uploads.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-
-// Memory storage — NestJS FileInterceptor default when no storage specified
-const multerOptions = {};
 
 @ApiTags('Uploads')
 @ApiBearerAuth()
@@ -20,17 +15,28 @@ export class UploadsController {
 
   // ─── Фото стола ─────────────────────────────────────────────────────────────
 
-  @Post('tables/:tableId/photo')
-  @ApiOperation({ summary: 'Загрузить фото стола (до 5 шт, макс 5 МБ)' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
-  @UseInterceptors(FileInterceptor('file', multerOptions))
-  uploadTablePhoto(
+  /** Шаг 1: получить presigned URL для загрузки фото стола */
+  @Post('tables/:tableId/presign')
+  @ApiOperation({ summary: 'Получить presigned URL для загрузки фото стола' })
+  @ApiQuery({ name: 'contentType', example: 'image/jpeg' })
+  presignTablePhoto(
     @Param('tableId') tableId: string,
     @CurrentUser('restaurantId') restaurantId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @Query('contentType') contentType: string,
   ) {
-    return this.service.uploadTablePhoto(tableId, restaurantId, file);
+    return this.service.presignTablePhoto(tableId, restaurantId, contentType);
+  }
+
+  /** Шаг 2: сохранить URL фото после загрузки в S3 */
+  @Post('tables/:tableId/photo')
+  @ApiOperation({ summary: 'Сохранить URL фото стола после загрузки в S3' })
+  @ApiBody({ schema: { type: 'object', properties: { url: { type: 'string' } } } })
+  saveTablePhoto(
+    @Param('tableId') tableId: string,
+    @CurrentUser('restaurantId') restaurantId: string,
+    @Body('url') url: string,
+  ) {
+    return this.service.saveTablePhoto(tableId, restaurantId, url);
   }
 
   @Delete('tables/:tableId/photo')
@@ -45,17 +51,26 @@ export class UploadsController {
 
   // ─── Фото зала ──────────────────────────────────────────────────────────────
 
-  @Post('halls/:hallId/photo')
-  @ApiOperation({ summary: 'Загрузить фото зала (до 15 шт, макс 5 МБ)' })
-  @ApiConsumes('multipart/form-data')
-  @ApiBody({ schema: { type: 'object', properties: { file: { type: 'string', format: 'binary' } } } })
-  @UseInterceptors(FileInterceptor('file', multerOptions))
-  uploadHallPhoto(
+  @Post('halls/:hallId/presign')
+  @ApiOperation({ summary: 'Получить presigned URL для загрузки фото зала' })
+  @ApiQuery({ name: 'contentType', example: 'image/jpeg' })
+  presignHallPhoto(
     @Param('hallId') hallId: string,
     @CurrentUser('restaurantId') restaurantId: string,
-    @UploadedFile() file: Express.Multer.File,
+    @Query('contentType') contentType: string,
   ) {
-    return this.service.uploadHallPhoto(hallId, restaurantId, file);
+    return this.service.presignHallPhoto(hallId, restaurantId, contentType);
+  }
+
+  @Post('halls/:hallId/photo')
+  @ApiOperation({ summary: 'Сохранить URL фото зала после загрузки в S3' })
+  @ApiBody({ schema: { type: 'object', properties: { url: { type: 'string' } } } })
+  saveHallPhoto(
+    @Param('hallId') hallId: string,
+    @CurrentUser('restaurantId') restaurantId: string,
+    @Body('url') url: string,
+  ) {
+    return this.service.saveHallPhoto(hallId, restaurantId, url);
   }
 
   @Delete('halls/:hallId/photo')

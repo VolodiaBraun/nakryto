@@ -157,26 +157,42 @@ export const hallsApi = {
 
 // ─── Uploads ──────────────────────────────────────────────────────────────────
 
-async function uploadFile(path: string, file: File): Promise<any> {
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null;
-  const form = new FormData();
-  form.append('file', file);
-  const res = await fetch(`${API_URL}${path}`, {
-    method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: form,
+/** Двухшаговая загрузка: 1) presign на бэкенде, 2) PUT напрямую в S3, 3) сохранить URL */
+async function uploadViaPresign(
+  presignPath: string,
+  savePath: string,
+  file: File,
+): Promise<any> {
+  // Шаг 1: получаем presigned URL
+  const { uploadUrl, publicUrl } = await request<{ uploadUrl: string; publicUrl: string }>(
+    `${presignPath}?contentType=${encodeURIComponent(file.type)}`,
+    { method: 'POST' },
+  );
+
+  // Шаг 2: загружаем файл напрямую в S3
+  const s3Res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type },
+    body: file,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.error?.message || err?.message || `HTTP ${res.status}`);
+  if (!s3Res.ok) {
+    throw new Error(`S3 upload failed: ${s3Res.status}`);
   }
-  const json = await res.json();
-  return json.data ?? json;
+
+  // Шаг 3: сохраняем URL в БД
+  return request(savePath, {
+    method: 'POST',
+    body: JSON.stringify({ url: publicUrl }),
+  });
 }
 
 export const uploadsApi = {
   uploadTablePhoto: (tableId: string, file: File) =>
-    uploadFile(`/api/uploads/tables/${tableId}/photo`, file),
+    uploadViaPresign(
+      `/api/uploads/tables/${tableId}/presign`,
+      `/api/uploads/tables/${tableId}/photo`,
+      file,
+    ),
 
   deleteTablePhoto: (tableId: string, url: string) =>
     request(`/api/uploads/tables/${tableId}/photo`, {
@@ -185,7 +201,11 @@ export const uploadsApi = {
     }),
 
   uploadHallPhoto: (hallId: string, file: File) =>
-    uploadFile(`/api/uploads/halls/${hallId}/photo`, file),
+    uploadViaPresign(
+      `/api/uploads/halls/${hallId}/presign`,
+      `/api/uploads/halls/${hallId}/photo`,
+      file,
+    ),
 
   deleteHallPhoto: (hallId: string, url: string) =>
     request(`/api/uploads/halls/${hallId}/photo`, {

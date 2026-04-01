@@ -1,13 +1,19 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { PrismaService } from '../prisma/prisma.service';
-import { extname } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
-const ALLOWED_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+const ALLOWED_TYPES: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+};
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_TABLE_PHOTOS = 5;
 const MAX_HALL_PHOTOS = 15;
+const PRESIGN_TTL = 300; // 5 minutes
 
 const BUCKET = process.env.S3_BUCKET ?? '';
 const PUBLIC_URL = (process.env.S3_PUBLIC_URL ?? '').replace(/\/$/, '');
@@ -24,18 +30,19 @@ export class UploadsService {
         accessKeyId: process.env.S3_ACCESS_KEY_ID ?? '',
         secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? '',
       },
-      forcePathStyle: true, // обязательно для Timeweb/Yandex/Minio
+      forcePathStyle: true,
     });
   }
 
-  // ─── Таблицы ────────────────────────────────────────────────────────────────
+  // ─── Фото стола ─────────────────────────────────────────────────────────────
 
-  async uploadTablePhoto(
+  /** Шаг 1: генерируем presigned PUT URL (без сетевого вызова к S3) */
+  async presignTablePhoto(
     tableId: string,
     restaurantId: string,
-    file: Express.Multer.File,
+    contentType: string,
   ) {
-    this.validateFile(file);
+    this.validateContentType(contentType);
 
     const table = await this.prisma.table.findFirst({
       where: { id: tableId, hall: { restaurantId }, isActive: true },
@@ -45,11 +52,26 @@ export class UploadsService {
       throw new BadRequestException(`Максимум ${MAX_TABLE_PHOTOS} фото на стол`);
     }
 
-    const url = await this.uploadToS3(file, `tables/${tableId}`);
+    return this.generatePresignedUrl(`tables/${tableId}`, contentType);
+  }
+
+  /** Шаг 2: сохраняем URL после загрузки фронтендом напрямую в S3 */
+  async saveTablePhoto(
+    tableId: string,
+    restaurantId: string,
+    publicUrl: string,
+  ) {
+    const table = await this.prisma.table.findFirst({
+      where: { id: tableId, hall: { restaurantId }, isActive: true },
+    });
+    if (!table) throw new NotFoundException('Стол не найден');
+    if (table.photos.length >= MAX_TABLE_PHOTOS) {
+      throw new BadRequestException(`Максимум ${MAX_TABLE_PHOTOS} фото на стол`);
+    }
 
     return this.prisma.table.update({
       where: { id: tableId },
-      data: { photos: { push: url } },
+      data: { photos: { push: publicUrl } },
       select: { id: true, photos: true },
     });
   }
@@ -65,8 +87,7 @@ export class UploadsService {
     if (!table) throw new NotFoundException('Стол не найден');
     if (!table.photos.includes(photoUrl)) throw new BadRequestException('Фото не найдено');
 
-    await this.deleteFromS3(photoUrl);
-
+    // Удаляем из БД; S3 объект остаётся (сервер не имеет исходящего HTTPS)
     return this.prisma.table.update({
       where: { id: tableId },
       data: { photos: table.photos.filter((p) => p !== photoUrl) },
@@ -74,14 +95,14 @@ export class UploadsService {
     });
   }
 
-  // ─── Залы ───────────────────────────────────────────────────────────────────
+  // ─── Фото зала ──────────────────────────────────────────────────────────────
 
-  async uploadHallPhoto(
+  async presignHallPhoto(
     hallId: string,
     restaurantId: string,
-    file: Express.Multer.File,
+    contentType: string,
   ) {
-    this.validateFile(file);
+    this.validateContentType(contentType);
 
     const hall = await this.prisma.hall.findFirst({
       where: { id: hallId, restaurantId, isActive: true },
@@ -91,11 +112,25 @@ export class UploadsService {
       throw new BadRequestException(`Максимум ${MAX_HALL_PHOTOS} фото на зал`);
     }
 
-    const url = await this.uploadToS3(file, `halls/${hallId}`);
+    return this.generatePresignedUrl(`halls/${hallId}`, contentType);
+  }
+
+  async saveHallPhoto(
+    hallId: string,
+    restaurantId: string,
+    publicUrl: string,
+  ) {
+    const hall = await this.prisma.hall.findFirst({
+      where: { id: hallId, restaurantId, isActive: true },
+    });
+    if (!hall) throw new NotFoundException('Зал не найден');
+    if (hall.photos.length >= MAX_HALL_PHOTOS) {
+      throw new BadRequestException(`Максимум ${MAX_HALL_PHOTOS} фото на зал`);
+    }
 
     return this.prisma.hall.update({
       where: { id: hallId },
-      data: { photos: { push: url } },
+      data: { photos: { push: publicUrl } },
       select: { id: true, photos: true },
     });
   }
@@ -111,8 +146,6 @@ export class UploadsService {
     if (!hall) throw new NotFoundException('Зал не найден');
     if (!hall.photos.includes(photoUrl)) throw new BadRequestException('Фото не найдено');
 
-    await this.deleteFromS3(photoUrl);
-
     return this.prisma.hall.update({
       where: { id: hallId },
       data: { photos: hall.photos.filter((p) => p !== photoUrl) },
@@ -120,40 +153,37 @@ export class UploadsService {
     });
   }
 
-  // ─── S3 helpers ─────────────────────────────────────────────────────────────
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-  private async uploadToS3(file: Express.Multer.File, prefix: string): Promise<string> {
-    const ext = extname(file.originalname).toLowerCase() || '.jpg';
+  private async generatePresignedUrl(
+    prefix: string,
+    contentType: string,
+  ): Promise<{ uploadUrl: string; publicUrl: string }> {
+    const ext = ALLOWED_TYPES[contentType] ?? '.jpg';
     const key = `${prefix}/${uuidv4()}${ext}`;
 
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: BUCKET,
-        Key: key,
-        Body: file.buffer,
-        ContentType: file.mimetype,
-        ACL: 'public-read',
-      }),
-    );
+    const command = new PutObjectCommand({
+      Bucket: BUCKET,
+      Key: key,
+      ContentType: contentType,
+      ACL: 'public-read',
+    });
 
-    return `${PUBLIC_URL}/${key}`;
+    // getSignedUrl — чисто криптографическая операция, сетевой вызов не нужен
+    const uploadUrl = await getSignedUrl(this.s3, command, { expiresIn: PRESIGN_TTL });
+    const publicUrl = `${PUBLIC_URL}/${key}`;
+
+    return { uploadUrl, publicUrl };
   }
 
-  private async deleteFromS3(url: string): Promise<void> {
-    try {
-      // Из полного URL извлекаем ключ: убираем PUBLIC_URL + '/'
-      const key = url.replace(`${PUBLIC_URL}/`, '');
-      await this.s3.send(new DeleteObjectCommand({ Bucket: BUCKET, Key: key }));
-    } catch {
-      // Не критично — фото уже недоступно
-    }
-  }
-
-  private validateFile(file: Express.Multer.File) {
-    if (!ALLOWED_TYPES.includes(file.mimetype)) {
+  private validateContentType(contentType: string) {
+    if (!ALLOWED_TYPES[contentType]) {
       throw new BadRequestException('Допустимые форматы: JPEG, PNG, WebP');
     }
-    if (file.size > MAX_SIZE_BYTES) {
+  }
+
+  validateFileSize(size: number) {
+    if (size > MAX_SIZE_BYTES) {
       throw new BadRequestException('Максимальный размер файла: 5 МБ');
     }
   }
