@@ -90,6 +90,9 @@ export const authApi = {
   register: (data: any) =>
     request('/api/auth/register', { method: 'POST', body: JSON.stringify(data) }),
 
+  registerPartner: (data: { name: string; email: string; password: string }) =>
+    request('/api/auth/register-partner', { method: 'POST', body: JSON.stringify(data) }),
+
   login: (data: any) =>
     request('/api/auth/login', { method: 'POST', body: JSON.stringify(data) }),
 

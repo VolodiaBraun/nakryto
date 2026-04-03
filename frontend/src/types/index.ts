@@ -50,10 +50,11 @@ export interface RestaurantSettings {
 
 export interface User {
   id: string;
-  restaurantId: string;
+  restaurantId: string | null;
   email: string;
   name: string;
   role: 'OWNER' | 'MANAGER' | 'HOSTESS';
+  userType: 'RESTAURANT_OWNER' | 'PARTNER';
   emailVerified: boolean;
   telegramChatId?: string;
 }

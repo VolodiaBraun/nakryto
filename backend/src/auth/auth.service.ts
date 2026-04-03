@@ -16,6 +16,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import { RegisterDto } from './dto/register.dto';
+import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { LoginDto } from './dto/login.dto';
 
 const RESET_TOKEN_TTL = 3600; // 1 hour
@@ -100,7 +101,7 @@ export class AuthService {
       .notifySuperAdminNewRestaurant(result.restaurant.name, result.user.name, result.user.email)
       .catch(() => {});
 
-    const tokens = await this.generateTokens(result.user.id, result.user.email, result.restaurant.id, result.user.role);
+    const tokens = await this.generateTokens(result.user.id, result.user.email, result.restaurant.id, result.user.role, 'RESTAURANT_OWNER');
     this.auditLog.log({
       action: 'auth.register',
       actorType: 'user',
@@ -114,10 +115,49 @@ export class AuthService {
     return { user: this.sanitizeUser(result.user), restaurant: result.restaurant, ...tokens };
   }
 
+  async registerPartner(dto: RegisterPartnerDto) {
+    const existingUser = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    if (existingUser) throw new ConflictException('Пользователь с таким email уже существует');
+
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const verifyToken = uuidv4();
+
+    const user = await this.prisma.user.create({
+      data: {
+        restaurantId: null,
+        email: dto.email,
+        passwordHash,
+        name: dto.name,
+        role: 'OWNER',
+        userType: 'PARTNER',
+        verifyToken,
+      },
+    });
+
+    this.notifications
+      .sendVerificationEmail(user.email, user.name, verifyToken)
+      .catch(() => {});
+    this.notifications
+      .notifySuperAdminNewPartner(user.name, user.email)
+      .catch(() => {});
+
+    const tokens = await this.generateTokens(user.id, user.email, null, user.role, 'PARTNER');
+    this.auditLog.log({
+      action: 'partner.register',
+      actorType: 'partner',
+      actorId: user.id,
+      actorEmail: user.email,
+      entityId: user.id,
+      status: 'ok',
+      meta: { name: user.name },
+    });
+    return { user: this.sanitizeUser(user), restaurant: null, ...tokens };
+  }
+
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
-      include: { restaurant: true },
+      include: { restaurant: true },  // null for partners
     });
 
     if (!user) {
@@ -135,10 +175,10 @@ export class AuthService {
     if (!passwordMatch) {
       this.auditLog.log({
         action: 'auth.login_failed',
-        actorType: 'user',
+        actorType: user.userType === 'PARTNER' ? 'partner' : 'user',
         actorId: user.id,
         actorEmail: user.email,
-        restaurantId: user.restaurantId,
+        restaurantId: user.restaurantId ?? undefined,
         status: 'error',
         errorMessage: 'Неверный пароль',
       });
@@ -146,17 +186,17 @@ export class AuthService {
     }
 
     this.auditLog.log({
-      action: 'auth.login',
-      actorType: 'user',
+      action: user.userType === 'PARTNER' ? 'partner.login' : 'auth.login',
+      actorType: user.userType === 'PARTNER' ? 'partner' : 'user',
       actorId: user.id,
       actorEmail: user.email,
-      restaurantId: user.restaurantId,
+      restaurantId: user.restaurantId ?? undefined,
       entityId: user.id,
       status: 'ok',
-      meta: { role: user.role },
+      meta: { role: user.role, userType: user.userType },
     });
-    const tokens = await this.generateTokens(user.id, user.email, user.restaurantId, user.role);
-    return { user: this.sanitizeUser(user), restaurant: user.restaurant, ...tokens };
+    const tokens = await this.generateTokens(user.id, user.email, user.restaurantId, user.role, user.userType);
+    return { user: this.sanitizeUser(user), restaurant: user.restaurant ?? null, ...tokens };
   }
 
   async refresh(refreshToken: string) {
@@ -170,7 +210,7 @@ export class AuthService {
         throw new UnauthorizedException('Недействительный refresh token');
       }
 
-      return this.generateTokens(user.id, user.email, user.restaurantId, user.role);
+      return this.generateTokens(user.id, user.email, user.restaurantId, user.role, user.userType);
     } catch {
       throw new UnauthorizedException('Недействительный refresh token');
     }
@@ -246,11 +286,11 @@ export class AuthService {
       include: { restaurant: true },
     });
     if (!user) throw new NotFoundException('Пользователь не найден');
-    return { user: this.sanitizeUser(user), restaurant: user.restaurant };
+    return { user: this.sanitizeUser(user), restaurant: user.restaurant ?? null };
   }
 
-  private async generateTokens(userId: string, email: string, restaurantId: string, role: string) {
-    const payload = { sub: userId, email, restaurantId, role };
+  private async generateTokens(userId: string, email: string, restaurantId: string | null, role: string, userType: string) {
+    const payload = { sub: userId, email, restaurantId, role, userType };
     const [accessToken, refreshToken] = await Promise.all([
       this.jwt.signAsync(payload, {
         secret: this.config.get('JWT_ACCESS_SECRET'),

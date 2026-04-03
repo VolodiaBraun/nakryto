@@ -64,6 +64,7 @@ interface Referrer {
   id: string;
   name: string;
   email: string;
+  isPartner?: boolean;
   restaurantName?: string;
   referralCode: string | null;
   balance: number;
@@ -720,7 +721,12 @@ export default function SuperAdminPage() {
                     ) : referrers.map((r) => (
                       <tr key={r.id} className="border-b border-gray-800/50 hover:bg-gray-800/30">
                         <td className="px-4 py-3">
-                          <div className="font-medium text-white">{r.name}</div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-white">{r.name}</span>
+                            {r.isPartner && (
+                              <span className="text-xs bg-violet-900 text-violet-300 px-1.5 py-0.5 rounded">Партнёр</span>
+                            )}
+                          </div>
                           <div className="text-gray-500 text-xs">{r.email}</div>
                           {r.restaurantName && <div className="text-gray-600 text-xs">{r.restaurantName}</div>}
                         </td>

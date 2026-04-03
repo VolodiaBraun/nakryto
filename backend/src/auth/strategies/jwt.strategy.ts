@@ -5,10 +5,11 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface JwtPayload {
-  sub: string;      // userId
+  sub: string;            // userId
   email: string;
-  restaurantId: string;
+  restaurantId: string | null;
   role: string;
+  userType: string;       // 'RESTAURANT_OWNER' | 'PARTNER'
 }
 
 @Injectable()

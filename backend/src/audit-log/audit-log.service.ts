@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export interface LogEntry {
   action: string;
-  actorType: 'user' | 'guest' | 'superadmin';
+  actorType: 'user' | 'guest' | 'superadmin' | 'partner';
   actorId?: string;
   actorEmail?: string;
   restaurantId?: string;

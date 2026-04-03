@@ -5,6 +5,7 @@ Disallow: /dashboard/
 Disallow: /superadmin/
 Disallow: /twa/
 Disallow: /max/
+Disallow: /partner/
 Allow: /
 
 Sitemap: https://nakryto.ru/sitemap.xml

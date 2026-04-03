@@ -69,22 +69,30 @@ model Restaurant {
   @@map("restaurants")
 }
 
-// ─── Пользователи (администраторы ресторана) ─────────────────────────────────
+// ─── Тип пользователя ────────────────────────────────────────────────────────
+
+enum UserType {
+  RESTAURANT_OWNER
+  PARTNER
+}
+
+// ─── Пользователи (администраторы ресторана и партнёры) ──────────────────────
 
 model User {
-  id             String   @id @default(uuid())
-  restaurantId   String
-  restaurant     Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
-  email          String   @unique
+  id             String    @id @default(uuid())
+  restaurantId   String?
+  restaurant     Restaurant? @relation(fields: [restaurantId], references: [id], onDelete: SetNull)
+  email          String    @unique
   passwordHash   String
   name           String
-  role           UserRole @default(OWNER)
-  emailVerified  Boolean  @default(false)
-  verifyToken    String?  @unique
+  role           UserRole  @default(OWNER)
+  userType       UserType  @default(RESTAURANT_OWNER)
+  emailVerified  Boolean   @default(false)
+  verifyToken    String?   @unique
   refreshToken   String?
   telegramChatId String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   // ─── Биллинг / тарифы ────────────────────────────────────────────────────
   balance              Decimal     @default(0) @db.Decimal(10,2)

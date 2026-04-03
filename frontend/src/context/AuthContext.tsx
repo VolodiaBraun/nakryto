@@ -19,7 +19,8 @@ interface AuthContextValue {
   user: User | null;
   restaurant: Restaurant | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  isPartner: boolean;
+  login: (email: string, password: string) => Promise<{ userType: string }>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
@@ -62,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => { refreshUser(); }, [refreshUser]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string): Promise<{ userType: string }> => {
     queryClient.clear();
     const data: any = await authApi.login({ email, password });
     localStorage.setItem('accessToken', data.accessToken);
@@ -70,12 +71,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(data.user);
     setRestaurant(data.restaurant);
 
-    // Last-touch: если в cookie есть реф-код — обновляем pendingReferralCode
-    // Покрывает кейс "пришёл по новой ссылке будучи не залогиненным, потом залогинился"
+    // Last-touch: если в cookie есть реф-код — обновляем pendingReferralCode (только для ресторанов)
     const refCookie = document.cookie.match(/(?:^|;\s*)referral_code=([^;]+)/)?.[1];
-    if (refCookie && data.user?.role === 'OWNER') {
+    if (refCookie && data.user?.userType === 'RESTAURANT_OWNER' && data.user?.role === 'OWNER') {
       referralApi.trackReferral(decodeURIComponent(refCookie)).catch(() => {});
     }
+
+    return { userType: data.user?.userType ?? 'RESTAURANT_OWNER' };
   };
 
   const register = async (registerData: RegisterData) => {
@@ -98,11 +100,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const can = (action: Permission): boolean => {
     if (!user) return false;
+    if (user.userType === 'PARTNER') return false; // партнёры не имеют прав в дашборде ресторана
     return (PERMISSIONS[action] as readonly string[]).includes(user.role);
   };
 
+  const isPartner = user?.userType === 'PARTNER';
+
   return (
-    <AuthContext.Provider value={{ user, restaurant, isLoading, login, register, logout, refreshUser, can }}>
+    <AuthContext.Provider value={{ user, restaurant, isLoading, isPartner, login, register, logout, refreshUser, can }}>
       {children}
     </AuthContext.Provider>
   );

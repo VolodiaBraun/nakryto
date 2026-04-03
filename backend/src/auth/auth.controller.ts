@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { IsEmail, IsString, MinLength } from 'class-validator';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
+import { RegisterPartnerDto } from './dto/register-partner.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
 import { JwtGuard } from './guards/jwt.guard';
@@ -26,6 +27,12 @@ export class AuthController {
   @ApiOperation({ summary: 'Регистрация ресторана + владельца' })
   register(@Body() dto: RegisterDto) {
     return this.authService.register(dto);
+  }
+
+  @Post('register-partner')
+  @ApiOperation({ summary: 'Регистрация партнёра (без ресторана)' })
+  registerPartner(@Body() dto: RegisterPartnerDto) {
+    return this.authService.registerPartner(dto);
   }
 
   @Post('login')

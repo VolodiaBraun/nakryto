@@ -173,6 +173,18 @@ export class NotificationsService {
     );
   }
 
+  async notifySuperAdminNewPartner(partnerName: string, partnerEmail: string): Promise<void> {
+    const superAdminEmail = this.config.get('SUPERADMIN_EMAIL', 'superadmin@nakryto.ru');
+    const frontendUrl = this.config.get('FRONTEND_URL', 'https://nakryto.ru');
+    const dashboardUrl = `${frontendUrl}/superadmin`;
+
+    await this.mailer.send(
+      superAdminEmail,
+      `Новый партнёр: ${partnerName}`,
+      newRestaurantSuperAdminEmail(`Партнёр — ${partnerName}`, partnerName, partnerEmail, dashboardUrl),
+    );
+  }
+
   // ─── SMS (stub, для будущего подключения SMSC) ────────────────────────────────
 
   async sendSmsToGuest(phone: string, message: string, bookingId: string): Promise<void> {

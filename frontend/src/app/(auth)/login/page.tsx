@@ -18,8 +18,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      router.push('/dashboard');
+      const { userType } = await login(email, password);
+      router.push(userType === 'PARTNER' ? '/partner' : '/dashboard');
     } catch (err: any) {
       setError(err.message || 'Ошибка входа');
     } finally {
@@ -83,12 +83,20 @@ export default function LoginPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500 mt-6">
-          Нет аккаунта?{' '}
-          <Link href="/register" className="text-blue-600 hover:underline font-medium">
-            Зарегистрировать ресторан
-          </Link>
-        </p>
+        <div className="mt-6 space-y-2 text-center text-sm text-gray-500">
+          <p>
+            Нет аккаунта?{' '}
+            <Link href="/register" className="text-blue-600 hover:underline font-medium">
+              Зарегистрировать ресторан
+            </Link>
+          </p>
+          <p>
+            Хотите продвигать Накрыто?{' '}
+            <Link href="/register/partner" className="text-violet-600 hover:underline font-medium">
+              Стать партнёром
+            </Link>
+          </p>
+        </div>
 
         <div className="mt-6 p-3 bg-gray-50 rounded-lg text-xs text-gray-500">
           <p className="font-medium mb-1">Тестовые данные:</p>
