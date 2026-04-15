@@ -77,12 +77,15 @@ function getTableColor(
   guestCount: number,
   tagFilter: string | null,
   darkMode: boolean,
+  themeTableStyle?: { fill: string; stroke: string; text: string },
 ) {
   const C = darkMode ? STATUS_COLORS_DARK : STATUS_COLORS_LIGHT;
   if (isSelected) return C.SELECTED;
   if (status === 'BOOKED' || status === 'LOCKED') return C[status];
   if (guestCount > table.maxGuests || guestCount < table.minGuests) return C.DISABLED;
   if (tagFilter && !(table.tags ?? []).includes(tagFilter)) return C.DISABLED;
+  // FREE — применяем тему если есть
+  if (themeTableStyle) return themeTableStyle;
   return C.FREE;
 }
 
@@ -106,10 +109,10 @@ function ZoomControls({ scale, onZoomIn, onZoomOut, onReset, darkMode }: {
 export default function BookingMapKonva({
   hall, tableStatuses, tableFreeUntil, selectedTableId, guestCount, onTableSelect, darkMode = false,
 }: BookingMapKonvaProps) {
-  const DECOR_COLORS = darkMode ? DECOR_COLORS_DARK : DECOR_COLORS_LIGHT;
-  const bgColor = darkMode ? '#1c1c1e' : 'white';
-  const gridColor = darkMode ? '#2c2c2e' : '#f3f4f6';
   const fp = hall.floorPlan || { width: 800, height: 600, objects: [] };
+  const DECOR_COLORS = darkMode ? DECOR_COLORS_DARK : DECOR_COLORS_LIGHT;
+  const bgColor = fp.theme?.bgColor ?? (darkMode ? '#1c1c1e' : 'white');
+  const gridColor = darkMode ? '#2c2c2e' : '#f3f4f6';
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const didInit = useRef(false);
@@ -267,15 +270,17 @@ export default function BookingMapKonva({
           {/* Декор */}
           <Layer listening={false}>
             {decors.map((obj) => {
-              const colors = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af' };
+              const base = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af' };
+              const decorFill   = obj.customFill   ?? base.fill;
+              const decorStroke = obj.customStroke ?? base.stroke;
               return (
                 <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
                   {obj.type === 'column' ? (
                     <Ellipse radiusX={obj.width / 2} radiusY={obj.height / 2} x={obj.width / 2} y={obj.height / 2}
-                      fill={colors.fill} stroke={colors.stroke} strokeWidth={2} opacity={0.8} />
+                      fill={decorFill} stroke={decorStroke} strokeWidth={2} opacity={0.8} />
                   ) : (
                     <Rect width={obj.width} height={obj.height}
-                      fill={colors.fill} stroke={colors.stroke} strokeWidth={1.5} cornerRadius={2} opacity={0.8} />
+                      fill={decorFill} stroke={decorStroke} strokeWidth={1.5} cornerRadius={2} opacity={0.8} />
                   )}
                   {obj.label && obj.type !== 'wall' && obj.type !== 'window' && (
                     <Text x={0} y={obj.height / 2 - 6} width={obj.width} align="center"
@@ -296,7 +301,7 @@ export default function BookingMapKonva({
               const isDisabled = guestCount > table.maxGuests || guestCount < table.minGuests || isTagFiltered;
               const isBooked = status === 'BOOKED';
               const isLocked = status === 'LOCKED';
-              const colors = getTableColor(table, status, isSelected, guestCount, tagFilter, darkMode);
+              const colors = getTableColor(table, status, isSelected, guestCount, tagFilter, darkMode, fp.theme?.tableStyle);
               const cx = table.width / 2;
               const cy = table.height / 2;
               const freeUntil = tableFreeUntil[table.id];

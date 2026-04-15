@@ -15,6 +15,7 @@ export interface Restaurant {
   telegramBotActive?: boolean;
   maxBotActive?: boolean;
   bookingLimitExceeded?: boolean;
+  plan?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,10 +80,21 @@ export interface Hall {
   tables: Table[];
 }
 
+export interface FloorTheme {
+  preset?: string;
+  bgColor?: string;
+  tableStyle?: {
+    fill: string;
+    stroke: string;
+    text: string;
+  };
+}
+
 export interface FloorPlan {
   width: number;
   height: number;
   objects: FloorPlanObject[];
+  theme?: FloorTheme;
 }
 
 export type FloorPlanObject = TableObject | DecorativeObject;
@@ -101,6 +113,8 @@ export interface TableObject {
   maxGuests: number;
   comment?: string;
   tags?: string[];
+  customFill?: string;
+  customStroke?: string;
 }
 
 export interface DecorativeObject {
@@ -112,6 +126,8 @@ export interface DecorativeObject {
   height: number;
   rotation: number;
   label?: string;
+  customFill?: string;
+  customStroke?: string;
 }
 
 export type TableShape = 'ROUND' | 'SQUARE' | 'RECTANGLE';

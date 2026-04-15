@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { Stage, Layer, Rect, Ellipse, Text, Group, Transformer, Line } from 'react-konva';
-import type { FloorPlan, FloorPlanObject, TableObject, DecorativeObject } from '@/types';
+import type { FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
 import type { Tool } from './HallEditor';
 import Konva from 'konva';
@@ -114,16 +114,20 @@ function ZoomControls({ scale, onZoomIn, onZoomOut, onReset }: {
 
 // ─── Стол ─────────────────────────────────────────────────────────────────────
 
-function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable }: {
+function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable, theme }: {
   obj: TableObject;
   isSelected: boolean;
   onSelect: (shiftKey?: boolean) => void;
   onDragEnd: (x: number, y: number) => void;
   onTransformEnd: (x: number, y: number, w: number, h: number, r: number) => void;
   draggable: boolean;
+  theme?: FloorTheme;
 }) {
   const groupRef = useRef<Konva.Group>(null);
-  const colors = TABLE_COLORS;
+  const fill   = obj.customFill   ?? theme?.tableStyle?.fill   ?? TABLE_COLORS.fill;
+  const stroke = obj.customStroke ?? theme?.tableStyle?.stroke ?? TABLE_COLORS.stroke;
+  const text   = theme?.tableStyle?.text ?? TABLE_COLORS.text;
+  const colors = { fill, stroke, selectedStroke: TABLE_COLORS.selectedStroke, text };
   const cx = obj.width / 2;
   const cy = obj.height / 2;
 
@@ -188,7 +192,12 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
   draggable: boolean;
 }) {
   const groupRef = useRef<Konva.Group>(null);
-  const colors = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af', text: '#374151' };
+  const base   = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af', text: '#374151' };
+  const colors = {
+    fill:   obj.customFill   ?? base.fill,
+    stroke: obj.customStroke ?? base.stroke,
+    text:   base.text,
+  };
 
   return (
     <Group
@@ -476,7 +485,8 @@ export default function KonvaCanvas({
       >
         {/* Фон + сетка */}
         <Layer listening={false}>
-          <Rect width={floorPlan.width} height={floorPlan.height} fill="white"
+          <Rect width={floorPlan.width} height={floorPlan.height}
+            fill={floorPlan.theme?.bgColor ?? 'white'}
             shadowColor="rgba(0,0,0,0.12)" shadowBlur={12} shadowOffsetX={2} shadowOffsetY={2} />
           {buildGrid(floorPlan.width, floorPlan.height)}
         </Layer>
@@ -507,6 +517,7 @@ export default function KonvaCanvas({
               onDragEnd={(x, y) => onObjectMove(obj.id, x, y)}
               onTransformEnd={(x, y, w, h, r) => onObjectTransform(obj.id, x, y, w, h, r)}
               draggable={isSelectMode}
+              theme={floorPlan.theme}
             />
           ))}
           <Transformer
