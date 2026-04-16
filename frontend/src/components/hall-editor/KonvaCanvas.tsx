@@ -127,7 +127,7 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
   const groupRef = useRef<Konva.Group>(null);
   const fill   = obj.customFill   ?? theme?.tableStyle?.fill   ?? TABLE_COLORS.fill;
   const stroke = obj.customStroke ?? theme?.tableStyle?.stroke ?? TABLE_COLORS.stroke;
-  const text   = theme?.tableStyle?.text ?? TABLE_COLORS.text;
+  const text   = obj.customTextColor ?? theme?.tableStyle?.text ?? TABLE_COLORS.text;
   const colors = { fill, stroke, selectedStroke: TABLE_COLORS.selectedStroke, text };
   const cx = obj.width / 2;
 
@@ -190,16 +190,16 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
       <Text x={0} y={cy - 14} width={obj.width} align="center"
         text={obj.label}
         fontSize={Math.min(16, obj.width / 4)} fontStyle="bold"
-        fill={iconImg ? '#ffffff' : colors.text}
-        shadowColor={iconImg ? 'rgba(0,0,0,0.6)' : undefined} shadowBlur={iconImg ? 3 : 0} />
+        fill={colors.text}
+        shadowColor={iconImg ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={iconImg ? 2 : 0} />
 
       {/* Вместимость */}
       <Text x={0} y={cy + 5} width={obj.width} align="center"
         text={seatsLabel(obj.minGuests, obj.maxGuests)}
         fontSize={Math.min(9, obj.width / 9)}
-        fill={iconImg ? '#ffffff' : colors.text}
+        fill={colors.text}
         opacity={0.8}
-        shadowColor={iconImg ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={iconImg ? 2 : 0} />
+        shadowColor={iconImg ? 'rgba(0,0,0,0.4)' : undefined} shadowBlur={iconImg ? 2 : 0} />
 
       {/* Теги */}
       {obj.tags && obj.tags.length > 0 && (

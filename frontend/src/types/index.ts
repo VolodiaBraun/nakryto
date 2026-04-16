@@ -122,6 +122,7 @@ export interface TableObject {
   tags?: string[];
   customFill?: string;
   customStroke?: string;
+  customTextColor?: string;
   iconUrl?: string;
 }
 

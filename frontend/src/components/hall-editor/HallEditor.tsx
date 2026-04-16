@@ -778,6 +778,26 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
               )}
             </div>
           </div>
+
+          {/* Цвет текста */}
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Цвет текста</span>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="color"
+                value={table.customTextColor ?? '#166534'}
+                onChange={(e) => onUpdate({ customTextColor: e.target.value })}
+                className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
+              />
+              {table.customTextColor && (
+                <button
+                  onClick={() => onUpdate({ customTextColor: undefined })}
+                  className="text-xs text-gray-400 hover:text-gray-600"
+                  title="Сбросить"
+                >✕</button>
+              )}
+            </div>
+          </div>
         </>
       )}
     </div>

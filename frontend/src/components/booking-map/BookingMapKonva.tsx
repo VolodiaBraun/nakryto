@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
-import { Stage, Layer, Rect, Ellipse, Text, Group, Line, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer, Rect, Ellipse, Text, Group, Image as KonvaImage } from 'react-konva';
 import { createPatternCanvas } from '@/lib/floorPatterns';
 import type { Hall, FloorPlan, TableObject, DecorativeObject } from '@/types';
 import Konva from 'konva';
@@ -113,7 +113,6 @@ export default function BookingMapKonva({
   const fp = hall.floorPlan || { width: 800, height: 600, objects: [] };
   const DECOR_COLORS = darkMode ? DECOR_COLORS_DARK : DECOR_COLORS_LIGHT;
   const bgColor = fp.theme?.bgColor ?? (darkMode ? '#1c1c1e' : 'white');
-  const gridColor = darkMode ? '#2c2c2e' : '#f3f4f6';
   const containerRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const didInit = useRef(false);
@@ -295,7 +294,7 @@ export default function BookingMapKonva({
           onWheel={handleWheel}
           style={{ background: bgColor, display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}
         >
-          {/* Фон + сетка */}
+          {/* Фон (без сетки — только для редактора) */}
           <Layer listening={false}>
             <Rect width={fp.width} height={fp.height}
               fill={patternCanvas || customTextureImg ? undefined : bgColor}
@@ -304,12 +303,6 @@ export default function BookingMapKonva({
               fillPatternScaleX={patternScaleX}
               fillPatternScaleY={patternScaleY}
               fillPatternRotation={patternRotation} />
-            {Array.from({ length: Math.floor(fp.width / 40) }).map((_, i) => (
-              <Line key={`v${i}`} points={[(i + 1) * 40, 0, (i + 1) * 40, fp.height]} stroke={gridColor} strokeWidth={1} />
-            ))}
-            {Array.from({ length: Math.floor(fp.height / 40) }).map((_, i) => (
-              <Line key={`h${i}`} points={[0, (i + 1) * 40, fp.width, (i + 1) * 40]} stroke={gridColor} strokeWidth={1} />
-            ))}
           </Layer>
 
           {/* Декор */}
@@ -415,13 +408,14 @@ export default function BookingMapKonva({
                   <Text x={0} y={cy - 14} width={table.width} align="center"
                     text={table.label}
                     fontSize={Math.min(16, table.width / 4)} fontStyle="bold"
-                    fill={iconImg ? '#ffffff' : colors.text}
-                    shadowColor={iconImg ? 'rgba(0,0,0,0.6)' : undefined} shadowBlur={iconImg ? 3 : 0} />
+                    fill={table.customTextColor ?? colors.text}
+                    shadowColor={iconImg ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={iconImg ? 2 : 0} />
 
                   {/* Вместимость */}
                   <Text x={0} y={cy + 5} width={table.width} align="center"
                     text={seatsLabel(table.minGuests, table.maxGuests)}
-                    fontSize={Math.min(9, table.width / 9)} fill={colors.text} opacity={0.7} />
+                    fontSize={Math.min(9, table.width / 9)}
+                    fill={table.customTextColor ?? colors.text} opacity={0.7} />
 
                   {(isBooked || isLocked) && (
                     <Text x={0} y={table.height - 16} width={table.width} align="center"
