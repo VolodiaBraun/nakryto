@@ -602,6 +602,7 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
     try {
       const token = localStorage.getItem('accessToken') ?? '';
       const res = await fetch(`/api/uploads/icons/presign?contentType=${encodeURIComponent(file.type)}`, {
+        method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.message ?? 'Ошибка'); }
