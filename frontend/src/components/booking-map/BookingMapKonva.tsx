@@ -190,6 +190,8 @@ export default function BookingMapKonva({
     if (!p || p === 'none') return null;
     return createPatternCanvas(p, fp.theme?.bgColor);
   }, [fp.theme?.bgPattern, fp.theme?.bgColor]);
+  const patternScale    = fp.theme?.patternScale    ?? 1;
+  const patternRotation = fp.theme?.patternRotation ?? 0;
 
   // Preload иконок столов
   useEffect(() => {
@@ -284,7 +286,10 @@ export default function BookingMapKonva({
             <Rect width={fp.width} height={fp.height}
               fill={patternCanvas ? undefined : bgColor}
               fillPatternImage={patternCanvas as any}
-              fillPatternRepeat="repeat" />
+              fillPatternRepeat="repeat"
+              fillPatternScaleX={patternScale}
+              fillPatternScaleY={patternScale}
+              fillPatternRotation={patternRotation} />
             {Array.from({ length: Math.floor(fp.width / 40) }).map((_, i) => (
               <Line key={`v${i}`} points={[(i + 1) * 40, 0, (i + 1) * 40, fp.height]} stroke={gridColor} strokeWidth={1} />
             ))}

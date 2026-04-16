@@ -593,6 +593,27 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
 }) {
   const { restaurant } = useAuth();
   const isPremium = restaurant?.plan === 'PREMIUM';
+  const [iconUploading, setIconUploading] = useState(false);
+  const [iconError, setIconError] = useState('');
+
+  const handleIconUpload = async (file: File) => {
+    setIconError('');
+    setIconUploading(true);
+    try {
+      const token = localStorage.getItem('accessToken') ?? '';
+      const res = await fetch(`/api/uploads/icons/presign?contentType=${encodeURIComponent(file.type)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message ?? 'Ошибка'); }
+      const { uploadUrl, publicUrl } = await res.json();
+      await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      onUpdate({ iconUrl: publicUrl });
+    } catch (e: any) {
+      setIconError(e.message ?? 'Ошибка загрузки');
+    } finally {
+      setIconUploading(false);
+    }
+  };
   const wCm = pxToCm(table.width);
   const hCm = pxToCm(table.height);
 
@@ -680,7 +701,7 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
 
           {/* Иконка */}
           <div>
-            <p className="text-xs text-gray-500 mb-1.5">Иконка</p>
+            <p className="text-xs text-gray-500 mb-1.5">Иконка стола</p>
             <div className="grid grid-cols-4 gap-1 mb-1.5">
               {/* Стандарт */}
               <button
@@ -706,6 +727,33 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
                 </button>
               ))}
             </div>
+
+            {/* Загрузка своей иконки */}
+            <label className={`relative flex items-center justify-center gap-1.5 w-full py-1.5 border border-dashed rounded-lg text-xs cursor-pointer transition-all ${
+              iconUploading ? 'border-blue-300 text-blue-400 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
+            }`}>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                className="hidden"
+                disabled={iconUploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleIconUpload(f); e.target.value = ''; }}
+              />
+              {iconUploading ? '⏳ Загрузка...' : '📤 Загрузить свою (PNG/SVG)'}
+            </label>
+
+            {/* Показываем кастомную иконку + кнопку сброса */}
+            {table.iconUrl && !TABLE_ICONS.some((i) => i.dataUrl === table.iconUrl) && (
+              <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-gray-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={table.iconUrl} alt="Иконка" className="w-10 h-10 rounded object-cover border border-gray-200" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-gray-500 truncate">Своя иконка</p>
+                </div>
+                <button onClick={() => onUpdate({ iconUrl: undefined })} className="text-xs text-red-400 hover:text-red-600" title="Удалить">✕</button>
+              </div>
+            )}
+            {iconError && <p className="text-[10px] text-red-500 mt-1">{iconError}</p>}
           </div>
 
           {/* Цвет заливки */}
@@ -940,6 +988,47 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
               })}
             </div>
           </div>
+
+          {/* Размер и поворот текстуры — показываем только когда выбрана текстура */}
+          {floorPlan.theme?.bgPattern && floorPlan.theme.bgPattern !== 'none' && (
+            <div className="space-y-2">
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Размер плитки</p>
+                <div className="flex gap-1">
+                  {([0.5, 0.75, 1, 1.5, 2, 3] as const).map((s) => {
+                    const labels: Record<number, string> = { 0.5: 'XS', 0.75: 'S', 1: 'M', 1.5: 'L', 2: 'XL', 3: '2×' };
+                    const active = (floorPlan.theme?.patternScale ?? 1) === s;
+                    return (
+                      <button key={s} onClick={() => updateTheme({ patternScale: s })}
+                        className={`flex-1 text-[10px] py-1 rounded border transition-all ${
+                          active ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        {labels[s]}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500 mb-1">Поворот текстуры</p>
+                <div className="flex gap-1">
+                  {[0, 45, 90, 135].map((r) => {
+                    const active = (floorPlan.theme?.patternRotation ?? 0) === r;
+                    return (
+                      <button key={r} onClick={() => updateTheme({ patternRotation: r })}
+                        className={`flex-1 text-[10px] py-1 rounded border transition-all ${
+                          active ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                        }`}
+                      >
+                        {r}°
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Кастомные цвета */}
           <div className="space-y-2">

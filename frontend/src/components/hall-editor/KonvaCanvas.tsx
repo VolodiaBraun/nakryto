@@ -476,6 +476,8 @@ export default function KonvaCanvas({
     if (!p || p === 'none') return null;
     return createPatternCanvas(p, floorPlan.theme?.bgColor);
   }, [floorPlan.theme?.bgPattern, floorPlan.theme?.bgColor]);
+  const patternScale    = floorPlan.theme?.patternScale    ?? 1;
+  const patternRotation = floorPlan.theme?.patternRotation ?? 0;
   const selectedIdsSet = new Set(selectedIds);
 
   // Ждём реального измерения контейнера
@@ -526,6 +528,9 @@ export default function KonvaCanvas({
             fill={patternCanvas ? undefined : (floorPlan.theme?.bgColor ?? 'white')}
             fillPatternImage={patternCanvas as any}
             fillPatternRepeat="repeat"
+            fillPatternScaleX={patternScale}
+            fillPatternScaleY={patternScale}
+            fillPatternRotation={patternRotation}
             shadowColor="rgba(0,0,0,0.12)" shadowBlur={12} shadowOffsetX={2} shadowOffsetY={2} />
           {buildGrid(floorPlan.width, floorPlan.height)}
         </Layer>

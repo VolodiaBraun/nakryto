@@ -86,6 +86,8 @@ export interface FloorTheme {
   preset?: string;
   bgColor?: string;
   bgPattern?: FloorPattern;
+  patternScale?: number;
+  patternRotation?: number;
   tableStyle?: {
     fill: string;
     stroke: string;
