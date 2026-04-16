@@ -874,6 +874,8 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
   const isPremium = restaurant?.plan === 'PREMIUM';
   const wM = Number(pxToM(floorPlan.width));
   const hM = Number(pxToM(floorPlan.height));
+  const [textureUploading, setTextureUploading] = useState(false);
+  const [textureError, setTextureError] = useState('');
 
   const updateTheme = (updates: Partial<FloorTheme>) => {
     onChange({ ...floorPlan, theme: { ...floorPlan.theme, ...updates } });
@@ -882,11 +884,33 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
   const applyPreset = (p: typeof HALL_THEME_PRESETS[number]) => {
     onChange({
       ...floorPlan,
-      theme: { preset: p.id, bgColor: p.bgColor, bgPattern: p.bgPattern as any, tableStyle: { fill: p.table.fill, stroke: p.table.stroke, text: p.table.text } },
+      theme: { preset: p.id, bgColor: p.bgColor, bgPattern: p.bgPattern as any, bgPatternUrl: undefined, tableStyle: { fill: p.table.fill, stroke: p.table.stroke, text: p.table.text } },
     });
   };
 
   const resetTheme = () => onChange({ ...floorPlan, theme: undefined });
+
+  const handleTextureUpload = async (file: File) => {
+    setTextureError('');
+    setTextureUploading(true);
+    try {
+      const token = localStorage.getItem('accessToken') ?? '';
+      const res = await fetch(`/api/uploads/textures/presign?contentType=${encodeURIComponent(file.type)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message ?? e.message ?? 'Ошибка'); }
+      const json = await res.json();
+      const { uploadUrl, publicUrl } = json.data ?? json;
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      if (!s3Res.ok) throw new Error(`Ошибка загрузки: ${s3Res.status}`);
+      updateTheme({ bgPatternUrl: publicUrl, bgPattern: 'none' });
+    } catch (e: any) {
+      setTextureError(e.message ?? 'Ошибка загрузки');
+    } finally {
+      setTextureUploading(false);
+    }
+  };
 
   return (
     <div className="p-4 space-y-4">
@@ -974,11 +998,11 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
             <p className="text-xs text-gray-500 mb-1.5">Текстура пола</p>
             <div className="grid grid-cols-3 gap-1">
               {PATTERN_OPTIONS.map((p) => {
-                const active = (floorPlan.theme?.bgPattern ?? 'none') === p.id;
+                const active = !floorPlan.theme?.bgPatternUrl && (floorPlan.theme?.bgPattern ?? 'none') === p.id;
                 return (
                   <button
                     key={p.id}
-                    onClick={() => updateTheme({ bgPattern: p.id as any })}
+                    onClick={() => updateTheme({ bgPattern: p.id as any, bgPatternUrl: undefined })}
                     className={`flex flex-col items-center gap-0.5 p-1 rounded-lg border text-[10px] transition-all ${
                       active ? 'border-blue-500 ring-1 ring-blue-400 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
                     }`}
@@ -990,31 +1014,67 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
                 );
               })}
             </div>
+
+            {/* Загрузка своей текстуры */}
+            <label className={`mt-1.5 relative flex items-center justify-center gap-1.5 w-full py-1.5 border border-dashed rounded-lg text-xs cursor-pointer transition-all ${
+              textureUploading ? 'border-blue-300 text-blue-400 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
+            }`}>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                className="hidden"
+                disabled={textureUploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleTextureUpload(f); e.target.value = ''; }}
+              />
+              {textureUploading ? '⏳ Загрузка...' : '📤 Своя текстура (PNG/JPG)'}
+            </label>
+
+            {/* Превью кастомной текстуры */}
+            {floorPlan.theme?.bgPatternUrl && (
+              <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-blue-200">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={floorPlan.theme.bgPatternUrl} alt="Текстура" className="w-10 h-10 rounded object-cover border border-gray-200 flex-shrink-0" />
+                <span className="text-[10px] text-gray-600 flex-1 truncate">Своя текстура</span>
+                <button onClick={() => updateTheme({ bgPatternUrl: undefined })} className="text-xs text-red-400 hover:text-red-600 flex-shrink-0" title="Удалить">✕</button>
+              </div>
+            )}
+            {textureError && <p className="text-[10px] text-red-500 mt-1">{textureError}</p>}
           </div>
 
-          {/* Размер и поворот текстуры — показываем только когда выбрана текстура */}
-          {floorPlan.theme?.bgPattern && floorPlan.theme.bgPattern !== 'none' && (
+          {/* Масштаб и поворот — показываем когда выбрана текстура (встроенная или своя) */}
+          {((floorPlan.theme?.bgPattern && floorPlan.theme.bgPattern !== 'none') || floorPlan.theme?.bgPatternUrl) && (
             <div className="space-y-2">
               <div>
                 <p className="text-xs text-gray-500 mb-1">Размер плитки</p>
-                <div className="flex gap-1">
-                  {([0.5, 0.75, 1, 1.5, 2, 3] as const).map((s) => {
-                    const labels: Record<number, string> = { 0.5: 'XS', 0.75: 'S', 1: 'M', 1.5: 'L', 2: 'XL', 3: '2×' };
-                    const active = (floorPlan.theme?.patternScale ?? 1) === s;
-                    return (
-                      <button key={s} onClick={() => updateTheme({ patternScale: s })}
-                        className={`flex-1 text-[10px] py-1 rounded border transition-all ${
-                          active ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                        }`}
-                      >
-                        {labels[s]}
-                      </button>
-                    );
-                  })}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-0.5">Ширина ×</label>
+                    <input
+                      type="number" min={0.2} max={10} step={0.1}
+                      value={Number((floorPlan.theme?.patternScaleX ?? 1).toFixed(1))}
+                      onChange={(e) => updateTheme({ patternScaleX: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
+                      className="input text-xs py-1 w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-0.5">Высота ×</label>
+                    <input
+                      type="number" min={0.2} max={10} step={0.1}
+                      value={Number((floorPlan.theme?.patternScaleY ?? floorPlan.theme?.patternScaleX ?? 1).toFixed(1))}
+                      onChange={(e) => updateTheme({ patternScaleY: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
+                      className="input text-xs py-1 w-full"
+                    />
+                  </div>
                 </div>
+                <button
+                  onClick={() => updateTheme({ patternScaleX: 1, patternScaleY: 1 })}
+                  className="mt-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+                >
+                  сбросить (1×1)
+                </button>
               </div>
               <div>
-                <p className="text-xs text-gray-500 mb-1">Поворот текстуры</p>
+                <p className="text-xs text-gray-500 mb-1">Поворот</p>
                 <div className="flex gap-1">
                   {[0, 45, 90, 135].map((r) => {
                     const active = (floorPlan.theme?.patternRotation ?? 0) === r;

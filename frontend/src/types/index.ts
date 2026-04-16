@@ -86,7 +86,9 @@ export interface FloorTheme {
   preset?: string;
   bgColor?: string;
   bgPattern?: FloorPattern;
-  patternScale?: number;
+  bgPatternUrl?: string;      // кастомная текстура пола (URL из S3)
+  patternScaleX?: number;     // масштаб по X (ширина плитки)
+  patternScaleY?: number;     // масштаб по Y (высота плитки)
   patternRotation?: number;
   tableStyle?: {
     fill: string;

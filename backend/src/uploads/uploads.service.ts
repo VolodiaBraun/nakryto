@@ -192,6 +192,14 @@ export class UploadsService {
     return this.generatePresignedUrl(`icons/${restaurantId}`, contentType, ALLOWED_ICON_TYPES);
   }
 
+  /** Presigned URL для загрузки кастомной текстуры пола (PREMIUM) */
+  async presignTextureUpload(restaurantId: string, contentType: string) {
+    if (!ALLOWED_ICON_TYPES[contentType]) {
+      throw new BadRequestException('Допустимые форматы: JPEG, PNG, WebP, SVG');
+    }
+    return this.generatePresignedUrl(`textures/${restaurantId}`, contentType, ALLOWED_ICON_TYPES);
+  }
+
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private validateContentType(contentType: string) {

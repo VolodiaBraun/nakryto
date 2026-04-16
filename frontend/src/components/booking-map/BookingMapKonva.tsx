@@ -186,11 +186,25 @@ export default function BookingMapKonva({
 
   // Паттерн пола
   const patternCanvas = useMemo(() => {
+    if (fp.theme?.bgPatternUrl) return null; // кастомная текстура — приоритет
     const p = fp.theme?.bgPattern;
     if (!p || p === 'none') return null;
     return createPatternCanvas(p, fp.theme?.bgColor);
-  }, [fp.theme?.bgPattern, fp.theme?.bgColor]);
-  const patternScale    = fp.theme?.patternScale    ?? 1;
+  }, [fp.theme?.bgPattern, fp.theme?.bgColor, fp.theme?.bgPatternUrl]);
+
+  // Кастомная текстура пола
+  const [customTextureImg, setCustomTextureImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    const url = fp.theme?.bgPatternUrl;
+    if (!url) { setCustomTextureImg(null); return; }
+    const img = new Image();
+    img.onload = () => setCustomTextureImg(img);
+    img.onerror = () => setCustomTextureImg(null);
+    img.src = url;
+  }, [fp.theme?.bgPatternUrl]);
+
+  const patternScaleX   = fp.theme?.patternScaleX ?? 1;
+  const patternScaleY   = fp.theme?.patternScaleY ?? patternScaleX;
   const patternRotation = fp.theme?.patternRotation ?? 0;
 
   // Preload иконок столов
@@ -284,11 +298,11 @@ export default function BookingMapKonva({
           {/* Фон + сетка */}
           <Layer listening={false}>
             <Rect width={fp.width} height={fp.height}
-              fill={patternCanvas ? undefined : bgColor}
-              fillPatternImage={patternCanvas as any}
+              fill={patternCanvas || customTextureImg ? undefined : bgColor}
+              fillPatternImage={customTextureImg ?? (patternCanvas as any)}
               fillPatternRepeat="repeat"
-              fillPatternScaleX={patternScale}
-              fillPatternScaleY={patternScale}
+              fillPatternScaleX={patternScaleX}
+              fillPatternScaleY={patternScaleY}
               fillPatternRotation={patternRotation} />
             {Array.from({ length: Math.floor(fp.width / 40) }).map((_, i) => (
               <Line key={`v${i}`} points={[(i + 1) * 40, 0, (i + 1) * 40, fp.height]} stroke={gridColor} strokeWidth={1} />

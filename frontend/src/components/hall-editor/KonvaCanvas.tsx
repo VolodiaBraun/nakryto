@@ -472,11 +472,25 @@ export default function KonvaCanvas({
 
   // Паттерн пола — canvas-текстура для Konva fillPatternImage
   const patternCanvas = useMemo(() => {
+    if (floorPlan.theme?.bgPatternUrl) return null; // кастомная текстура — приоритет
     const p = floorPlan.theme?.bgPattern;
     if (!p || p === 'none') return null;
     return createPatternCanvas(p, floorPlan.theme?.bgColor);
-  }, [floorPlan.theme?.bgPattern, floorPlan.theme?.bgColor]);
-  const patternScale    = floorPlan.theme?.patternScale    ?? 1;
+  }, [floorPlan.theme?.bgPattern, floorPlan.theme?.bgColor, floorPlan.theme?.bgPatternUrl]);
+
+  // Кастомная текстура пола (загруженный пользователем файл)
+  const [customTextureImg, setCustomTextureImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    const url = floorPlan.theme?.bgPatternUrl;
+    if (!url) { setCustomTextureImg(null); return; }
+    const img = new Image();
+    img.onload = () => setCustomTextureImg(img);
+    img.onerror = () => setCustomTextureImg(null);
+    img.src = url;
+  }, [floorPlan.theme?.bgPatternUrl]);
+
+  const patternScaleX   = floorPlan.theme?.patternScaleX ?? 1;
+  const patternScaleY   = floorPlan.theme?.patternScaleY ?? patternScaleX;
   const patternRotation = floorPlan.theme?.patternRotation ?? 0;
   const selectedIdsSet = new Set(selectedIds);
 
@@ -525,11 +539,11 @@ export default function KonvaCanvas({
         {/* Фон + сетка */}
         <Layer listening={false}>
           <Rect width={floorPlan.width} height={floorPlan.height}
-            fill={patternCanvas ? undefined : (floorPlan.theme?.bgColor ?? 'white')}
-            fillPatternImage={patternCanvas as any}
+            fill={patternCanvas || customTextureImg ? undefined : (floorPlan.theme?.bgColor ?? 'white')}
+            fillPatternImage={customTextureImg ?? (patternCanvas as any)}
             fillPatternRepeat="repeat"
-            fillPatternScaleX={patternScale}
-            fillPatternScaleY={patternScale}
+            fillPatternScaleX={patternScaleX}
+            fillPatternScaleY={patternScaleY}
             fillPatternRotation={patternRotation}
             shadowColor="rgba(0,0,0,0.12)" shadowBlur={12} shadowOffsetX={2} shadowOffsetY={2} />
           {buildGrid(floorPlan.width, floorPlan.height)}
