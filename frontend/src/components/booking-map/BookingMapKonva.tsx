@@ -1,7 +1,8 @@
 'use client';
 
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
-import { Stage, Layer, Rect, Ellipse, Text, Group, Line } from 'react-konva';
+import { Stage, Layer, Rect, Ellipse, Text, Group, Line, Image as KonvaImage } from 'react-konva';
+import { createPatternCanvas } from '@/lib/floorPatterns';
 import type { Hall, FloorPlan, TableObject, DecorativeObject } from '@/types';
 import Konva from 'konva';
 import { TABLE_TAGS } from '@/lib/tableTags';
@@ -121,6 +122,7 @@ export default function BookingMapKonva({
   const [tagFilter, setTagFilter]     = useState<string | null>(null);
   const [hoveredId, setHoveredId]     = useState<string | null>(null);
   const [tooltip, setTooltip]         = useState<{ x: number; y: number; text: string } | null>(null);
+  const [iconImages, setIconImages]   = useState<Record<string, HTMLImageElement>>({});
   const [containerW, setContainerW]   = useState(0);
   const [containerH, setContainerH]  = useState(0);
   const [scale, setScale]             = useState(1);
@@ -181,6 +183,27 @@ export default function BookingMapKonva({
 
   const tables = (fp.objects?.filter((o: any) => o.type === 'table') ?? []) as TableObject[];
   const decors = (fp.objects?.filter((o: any) => o.type !== 'table') ?? []) as DecorativeObject[];
+
+  // Паттерн пола
+  const patternCanvas = useMemo(() => {
+    const p = fp.theme?.bgPattern;
+    if (!p || p === 'none') return null;
+    return createPatternCanvas(p, fp.theme?.bgColor);
+  }, [fp.theme?.bgPattern, fp.theme?.bgColor]);
+
+  // Preload иконок столов
+  useEffect(() => {
+    const urls = Array.from(new Set(tables.flatMap((t) => t.iconUrl ? [t.iconUrl] : [])));
+    if (urls.length === 0) return;
+    Promise.all(
+      urls.map((url) => new Promise<[string, HTMLImageElement]>((res, rej) => {
+        const img = new Image();
+        img.onload = () => res([url, img]);
+        img.onerror = () => rej(url);
+        img.src = url;
+      }))
+    ).then((pairs) => setIconImages(Object.fromEntries(pairs))).catch(() => {});
+  }, [tables]);
 
   // Теги, которые реально используются в этом зале
   const activeTags = useMemo(() => {
@@ -258,7 +281,10 @@ export default function BookingMapKonva({
         >
           {/* Фон + сетка */}
           <Layer listening={false}>
-            <Rect width={fp.width} height={fp.height} fill={bgColor} />
+            <Rect width={fp.width} height={fp.height}
+              fill={patternCanvas ? undefined : bgColor}
+              fillPatternImage={patternCanvas as any}
+              fillPatternRepeat="repeat" />
             {Array.from({ length: Math.floor(fp.width / 40) }).map((_, i) => (
               <Line key={`v${i}`} points={[(i + 1) * 40, 0, (i + 1) * 40, fp.height]} stroke={gridColor} strokeWidth={1} />
             ))}
@@ -305,6 +331,9 @@ export default function BookingMapKonva({
               const cx = table.width / 2;
               const cy = table.height / 2;
               const freeUntil = tableFreeUntil[table.id];
+              const iconImg = table.iconUrl ? iconImages[table.iconUrl] : null;
+              // при наличии иконки — статус показываем через opacity, не заливку
+              const iconOpacity = iconImg ? (isBooked ? 0.35 : isDisabled ? 0.45 : isLocked ? 0.6 : 1) : 1;
 
               return (
                 <Group
@@ -329,7 +358,15 @@ export default function BookingMapKonva({
                   onMouseLeave={() => { setHoveredId(null); setTooltip(null); }}
                   style={{ cursor: isDisabled || isBooked ? 'not-allowed' : 'pointer' }}
                 >
-                  {table.shape === 'ROUND' ? (
+                  {/* Фигура или кастомная иконка */}
+                  {iconImg ? (
+                    <KonvaImage
+                      image={iconImg}
+                      width={table.width} height={table.height}
+                      cornerRadius={table.shape === 'ROUND' ? Math.min(table.width, table.height) / 2 : 6}
+                      opacity={iconOpacity}
+                    />
+                  ) : table.shape === 'ROUND' ? (
                     <Ellipse radiusX={cx} radiusY={cy} x={cx} y={cy}
                       fill={colors.fill}
                       stroke={isSelected ? '#2563eb' : isHovered ? '#60a5fa' : colors.stroke}
@@ -344,10 +381,23 @@ export default function BookingMapKonva({
                       shadowColor={isSelected ? '#3b82f6' : 'transparent'} shadowBlur={isSelected ? 8 : 0} />
                   )}
 
+                  {/* Контур статуса поверх иконки */}
+                  {iconImg && (
+                    table.shape === 'ROUND'
+                      ? <Ellipse radiusX={cx} radiusY={cy} x={cx} y={cy} fill="transparent"
+                          stroke={isSelected ? '#2563eb' : isBooked ? '#f87171' : isLocked ? '#fbbf24' : isHovered ? '#60a5fa' : 'transparent'}
+                          strokeWidth={isSelected || isBooked || isLocked ? 3 : 2} />
+                      : <Rect width={table.width} height={table.height} cornerRadius={6} fill="transparent"
+                          stroke={isSelected ? '#2563eb' : isBooked ? '#f87171' : isLocked ? '#fbbf24' : isHovered ? '#60a5fa' : 'transparent'}
+                          strokeWidth={isSelected || isBooked || isLocked ? 3 : 2} />
+                  )}
+
                   {/* Номер стола */}
                   <Text x={0} y={cy - 14} width={table.width} align="center"
                     text={table.label}
-                    fontSize={Math.min(16, table.width / 4)} fontStyle="bold" fill={colors.text} />
+                    fontSize={Math.min(16, table.width / 4)} fontStyle="bold"
+                    fill={iconImg ? '#ffffff' : colors.text}
+                    shadowColor={iconImg ? 'rgba(0,0,0,0.6)' : undefined} shadowBlur={iconImg ? 3 : 0} />
 
                   {/* Вместимость */}
                   <Text x={0} y={cy + 5} width={table.width} align="center"

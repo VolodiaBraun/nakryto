@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
-import { Stage, Layer, Rect, Ellipse, Text, Group, Transformer, Line } from 'react-konva';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import { Stage, Layer, Rect, Ellipse, Text, Group, Transformer, Line, Image as KonvaImage } from 'react-konva';
 import type { FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
+import { createPatternCanvas } from '@/lib/floorPatterns';
 import type { Tool } from './HallEditor';
 import Konva from 'konva';
 
@@ -129,6 +130,16 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
   const text   = theme?.tableStyle?.text ?? TABLE_COLORS.text;
   const colors = { fill, stroke, selectedStroke: TABLE_COLORS.selectedStroke, text };
   const cx = obj.width / 2;
+
+  // Загрузка кастомной иконки
+  const [iconImg, setIconImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!obj.iconUrl) { setIconImg(null); return; }
+    const img = new Image();
+    img.onload = () => setIconImg(img);
+    img.onerror = () => setIconImg(null);
+    img.src = obj.iconUrl;
+  }, [obj.iconUrl]);
   const cy = obj.height / 2;
 
   return (
@@ -148,7 +159,14 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
         onTransformEnd(snapToGrid(node.x()), snapToGrid(node.y()), Math.max(30, Math.round(obj.width * sx)), Math.max(30, Math.round(obj.height * sy)), node.rotation());
       }}
     >
-      {obj.shape === 'ROUND' ? (
+      {/* Фигура стола или кастомная иконка */}
+      {iconImg ? (
+        <KonvaImage
+          image={iconImg}
+          width={obj.width} height={obj.height}
+          cornerRadius={obj.shape === 'ROUND' ? Math.min(obj.width, obj.height) / 2 : 6}
+        />
+      ) : obj.shape === 'ROUND' ? (
         <Ellipse radiusX={cx} radiusY={cy} x={cx} y={cy}
           fill={colors.fill}
           stroke={isSelected ? colors.selectedStroke : colors.stroke}
@@ -161,15 +179,27 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
           strokeWidth={isSelected ? 2.5 : 1.5} />
       )}
 
+      {/* Контур выделения поверх иконки */}
+      {iconImg && isSelected && (
+        obj.shape === 'ROUND'
+          ? <Ellipse radiusX={cx} radiusY={cy} x={cx} y={cy} fill="transparent" stroke={colors.selectedStroke} strokeWidth={2.5} />
+          : <Rect width={obj.width} height={obj.height} cornerRadius={6} fill="transparent" stroke={colors.selectedStroke} strokeWidth={2.5} />
+      )}
+
       {/* Номер стола */}
       <Text x={0} y={cy - 14} width={obj.width} align="center"
         text={obj.label}
-        fontSize={Math.min(16, obj.width / 4)} fontStyle="bold" fill={colors.text} />
+        fontSize={Math.min(16, obj.width / 4)} fontStyle="bold"
+        fill={iconImg ? '#ffffff' : colors.text}
+        shadowColor={iconImg ? 'rgba(0,0,0,0.6)' : undefined} shadowBlur={iconImg ? 3 : 0} />
 
       {/* Вместимость */}
       <Text x={0} y={cy + 5} width={obj.width} align="center"
         text={seatsLabel(obj.minGuests, obj.maxGuests)}
-        fontSize={Math.min(9, obj.width / 9)} fill={colors.text} opacity={0.65} />
+        fontSize={Math.min(9, obj.width / 9)}
+        fill={iconImg ? '#ffffff' : colors.text}
+        opacity={0.8}
+        shadowColor={iconImg ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={iconImg ? 2 : 0} />
 
       {/* Теги */}
       {obj.tags && obj.tags.length > 0 && (
@@ -439,6 +469,13 @@ export default function KonvaCanvas({
 
   const tables = floorPlan.objects.filter((o) => o.type === 'table') as TableObject[];
   const decors = floorPlan.objects.filter((o) => o.type !== 'table') as DecorativeObject[];
+
+  // Паттерн пола — canvas-текстура для Konva fillPatternImage
+  const patternCanvas = useMemo(() => {
+    const p = floorPlan.theme?.bgPattern;
+    if (!p || p === 'none') return null;
+    return createPatternCanvas(p, floorPlan.theme?.bgColor);
+  }, [floorPlan.theme?.bgPattern, floorPlan.theme?.bgColor]);
   const selectedIdsSet = new Set(selectedIds);
 
   // Ждём реального измерения контейнера
@@ -486,7 +523,9 @@ export default function KonvaCanvas({
         {/* Фон + сетка */}
         <Layer listening={false}>
           <Rect width={floorPlan.width} height={floorPlan.height}
-            fill={floorPlan.theme?.bgColor ?? 'white'}
+            fill={patternCanvas ? undefined : (floorPlan.theme?.bgColor ?? 'white')}
+            fillPatternImage={patternCanvas as any}
+            fillPatternRepeat="repeat"
             shadowColor="rgba(0,0,0,0.12)" shadowBlur={12} shadowOffsetX={2} shadowOffsetY={2} />
           {buildGrid(floorPlan.width, floorPlan.height)}
         </Layer>

@@ -80,9 +80,12 @@ export interface Hall {
   tables: Table[];
 }
 
+export type FloorPattern = 'none' | 'parquet' | 'tile' | 'stone' | 'concrete' | 'carpet';
+
 export interface FloorTheme {
   preset?: string;
   bgColor?: string;
+  bgPattern?: FloorPattern;
   tableStyle?: {
     fill: string;
     stroke: string;
@@ -115,6 +118,7 @@ export interface TableObject {
   tags?: string[];
   customFill?: string;
   customStroke?: string;
+  iconUrl?: string;
 }
 
 export interface DecorativeObject {

@@ -5,18 +5,20 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { Hall, FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
+import { TABLE_ICONS } from '@/lib/tableIcons';
+import { PATTERN_OPTIONS } from '@/lib/floorPatterns';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '@/context/AuthContext';
 
 // ─── Пресеты тем оформления ───────────────────────────────────────────────────
 
 const HALL_THEME_PRESETS = [
-  { id: 'default',  label: 'Стандарт', bgColor: '#ffffff', table: { fill: '#dcfce7', stroke: '#86efac', text: '#166534' } },
-  { id: 'warm',     label: 'Тёплый',   bgColor: '#fdf6ec', table: { fill: '#fef3c7', stroke: '#f59e0b', text: '#78350f' } },
-  { id: 'dark',     label: 'Тёмный',   bgColor: '#1c1c2e', table: { fill: '#1e3a5f', stroke: '#3b82f6', text: '#93c5fd' } },
-  { id: 'loft',     label: 'Лофт',     bgColor: '#d4d4d4', table: { fill: '#f3f4f6', stroke: '#6b7280', text: '#1f2937' } },
-  { id: 'classic',  label: 'Классика', bgColor: '#c8a96e', table: { fill: '#fdf8f0', stroke: '#a97c50', text: '#5c3d1e' } },
-  { id: 'terrace',  label: 'Терраса',  bgColor: '#c8e6b0', table: { fill: '#f0fdf4', stroke: '#4ade80', text: '#166534' } },
+  { id: 'default',  label: 'Стандарт', bgColor: '#ffffff', bgPattern: 'none',     table: { fill: '#dcfce7', stroke: '#86efac', text: '#166534' } },
+  { id: 'warm',     label: 'Тёплый',   bgColor: '#fdf6ec', bgPattern: 'none',     table: { fill: '#fef3c7', stroke: '#f59e0b', text: '#78350f' } },
+  { id: 'dark',     label: 'Тёмный',   bgColor: '#1c1c2e', bgPattern: 'concrete', table: { fill: '#1e3a5f', stroke: '#3b82f6', text: '#93c5fd' } },
+  { id: 'loft',     label: 'Лофт',     bgColor: '#c0bfbd', bgPattern: 'concrete', table: { fill: '#f3f4f6', stroke: '#6b7280', text: '#1f2937' } },
+  { id: 'classic',  label: 'Классика', bgColor: '#c8a96e', bgPattern: 'parquet',  table: { fill: '#fdf8f0', stroke: '#a97c50', text: '#5c3d1e' } },
+  { id: 'terrace',  label: 'Терраса',  bgColor: '#d4c8a0', bgPattern: 'stone',    table: { fill: '#f0fdf4', stroke: '#4ade80', text: '#166534' } },
 ] as const;
 
 const KonvaCanvas = dynamic(() => import('./KonvaCanvas'), {
@@ -674,9 +676,41 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
 
       {isPremium && (
         <>
-          <SectionDivider label="Цвет стола" />
+          <SectionDivider label="Внешний вид стола" />
+
+          {/* Иконка */}
+          <div>
+            <p className="text-xs text-gray-500 mb-1.5">Иконка</p>
+            <div className="grid grid-cols-4 gap-1 mb-1.5">
+              {/* Стандарт */}
+              <button
+                onClick={() => onUpdate({ iconUrl: undefined })}
+                title="Стандарт"
+                className={`h-10 rounded-lg border text-xs font-medium transition-all ${
+                  !table.iconUrl ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-gray-300 text-gray-500'
+                }`}
+              >
+                ABC
+              </button>
+              {TABLE_ICONS.map((icon) => (
+                <button
+                  key={icon.id}
+                  onClick={() => onUpdate({ iconUrl: icon.dataUrl })}
+                  title={icon.label}
+                  className={`h-10 rounded-lg border overflow-hidden transition-all ${
+                    table.iconUrl === icon.dataUrl ? 'border-blue-500 ring-1 ring-blue-400' : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={icon.dataUrl} alt={icon.label} className="w-full h-full object-cover" />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Цвет заливки */}
           <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">Заливка</span>
+            <span className="text-xs text-gray-500">Цвет заливки</span>
             <div className="flex items-center gap-1.5">
               <input
                 type="color"
@@ -797,7 +831,7 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
   const applyPreset = (p: typeof HALL_THEME_PRESETS[number]) => {
     onChange({
       ...floorPlan,
-      theme: { preset: p.id, bgColor: p.bgColor, tableStyle: { fill: p.table.fill, stroke: p.table.stroke, text: p.table.text } },
+      theme: { preset: p.id, bgColor: p.bgColor, bgPattern: p.bgPattern as any, tableStyle: { fill: p.table.fill, stroke: p.table.stroke, text: p.table.text } },
     });
   };
 
@@ -882,6 +916,29 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
                 </button>
               );
             })}
+          </div>
+
+          {/* Текстура пола */}
+          <div>
+            <p className="text-xs text-gray-500 mb-1.5">Текстура пола</p>
+            <div className="grid grid-cols-3 gap-1">
+              {PATTERN_OPTIONS.map((p) => {
+                const active = (floorPlan.theme?.bgPattern ?? 'none') === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => updateTheme({ bgPattern: p.id as any })}
+                    className={`flex flex-col items-center gap-0.5 p-1 rounded-lg border text-[10px] transition-all ${
+                      active ? 'border-blue-500 ring-1 ring-blue-400 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <span className="w-full h-4 rounded-sm border border-gray-100"
+                      style={{ background: p.preview }} />
+                    <span className="text-gray-600">{p.label}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* Кастомные цвета */}
