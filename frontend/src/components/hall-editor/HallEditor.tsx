@@ -606,8 +606,10 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.message ?? 'Ошибка'); }
-      const { uploadUrl, publicUrl } = await res.json();
-      await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const json = await res.json();
+      const { uploadUrl, publicUrl } = json.data ?? json;
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      if (!s3Res.ok) throw new Error(`Ошибка загрузки в хранилище: ${s3Res.status}`);
       onUpdate({ iconUrl: publicUrl });
     } catch (e: any) {
       setIconError(e.message ?? 'Ошибка загрузки');
