@@ -13,6 +13,30 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 export class UploadsController {
   constructor(private service: UploadsService) {}
 
+  // ─── Иконки столов (кастомные) ──────────────────────────────────────────────
+
+  /** Presigned URL для загрузки кастомной иконки стола (PREMIUM, хранится в floorPlan JSONB) */
+  @Post('icons/presign')
+  @ApiOperation({ summary: 'Получить presigned URL для загрузки кастомной иконки стола' })
+  @ApiQuery({ name: 'contentType', example: 'image/png' })
+  presignIconUpload(
+    @CurrentUser('restaurantId') restaurantId: string,
+    @Query('contentType') contentType: string,
+  ) {
+    return this.service.presignIconUpload(restaurantId, contentType);
+  }
+
+  /** Presigned URL для загрузки кастомной текстуры пола (PREMIUM, хранится в floorPlan JSONB) */
+  @Post('textures/presign')
+  @ApiOperation({ summary: 'Получить presigned URL для загрузки кастомной текстуры пола' })
+  @ApiQuery({ name: 'contentType', example: 'image/jpeg' })
+  presignTextureUpload(
+    @CurrentUser('restaurantId') restaurantId: string,
+    @Query('contentType') contentType: string,
+  ) {
+    return this.service.presignTextureUpload(restaurantId, contentType);
+  }
+
   // ─── Фото стола ─────────────────────────────────────────────────────────────
 
   /** Шаг 1: получить presigned URL для загрузки фото стола */

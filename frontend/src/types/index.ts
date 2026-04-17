@@ -15,6 +15,7 @@ export interface Restaurant {
   telegramBotActive?: boolean;
   maxBotActive?: boolean;
   bookingLimitExceeded?: boolean;
+  plan?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -79,13 +80,45 @@ export interface Hall {
   tables: Table[];
 }
 
+export type FloorPattern = 'none' | 'parquet' | 'tile' | 'stone' | 'concrete' | 'carpet';
+
+export interface FloorTheme {
+  preset?: string;
+  bgColor?: string;
+  bgPattern?: FloorPattern;
+  bgPatternUrl?: string;      // кастомная текстура пола (URL из S3)
+  patternScaleX?: number;     // масштаб по X (ширина плитки)
+  patternScaleY?: number;     // масштаб по Y (высота плитки)
+  patternRotation?: number;
+  tableStyle?: {
+    fill: string;
+    stroke: string;
+    text: string;
+  };
+}
+
 export interface FloorPlan {
   width: number;
   height: number;
   objects: FloorPlanObject[];
+  theme?: FloorTheme;
+  snapshotUrl?: string; // статический снимок (фон + декор) для быстрой загрузки страницы гостя
 }
 
-export type FloorPlanObject = TableObject | DecorativeObject;
+export interface FloorObject {
+  type: 'floor';
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  textureUrl: string;
+  patternScaleX?: number;
+  patternScaleY?: number;
+}
+
+export type FloorPlanObject = TableObject | DecorativeObject | FloorObject;
 
 export interface TableObject {
   type: 'table';
@@ -101,6 +134,10 @@ export interface TableObject {
   maxGuests: number;
   comment?: string;
   tags?: string[];
+  customFill?: string;
+  customStroke?: string;
+  customTextColor?: string;
+  iconUrl?: string;
 }
 
 export interface DecorativeObject {
@@ -112,6 +149,8 @@ export interface DecorativeObject {
   height: number;
   rotation: number;
   label?: string;
+  customFill?: string;
+  customStroke?: string;
 }
 
 export type TableShape = 'ROUND' | 'SQUARE' | 'RECTANGLE';

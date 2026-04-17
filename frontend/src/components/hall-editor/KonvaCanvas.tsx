@@ -1,9 +1,10 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState } from 'react';
-import { Stage, Layer, Rect, Ellipse, Text, Group, Transformer, Line } from 'react-konva';
-import type { FloorPlan, FloorPlanObject, TableObject, DecorativeObject } from '@/types';
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import { Stage, Layer, Rect, Ellipse, Text, Group, Transformer, Line, Image as KonvaImage } from 'react-konva';
+import type { FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
+import { createPatternCanvas } from '@/lib/floorPatterns';
 import type { Tool } from './HallEditor';
 import Konva from 'konva';
 
@@ -112,10 +113,10 @@ function ZoomControls({ scale, onZoomIn, onZoomOut, onReset }: {
   );
 }
 
-// ─── Стол ─────────────────────────────────────────────────────────────────────
+// ─── Покрытие пола ────────────────────────────────────────────────────────────
 
-function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable }: {
-  obj: TableObject;
+function FloorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable }: {
+  obj: FloorObject;
   isSelected: boolean;
   onSelect: (shiftKey?: boolean) => void;
   onDragEnd: (x: number, y: number) => void;
@@ -123,8 +124,87 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
   draggable: boolean;
 }) {
   const groupRef = useRef<Konva.Group>(null);
-  const colors = TABLE_COLORS;
+  const [texImg, setTexImg] = useState<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setTexImg(img);
+    img.onerror = () => setTexImg(null);
+    img.src = obj.textureUrl;
+  }, [obj.textureUrl]);
+
+  const scaleX = obj.patternScaleX ?? 1;
+  const scaleY = obj.patternScaleY ?? scaleX;
+
+  return (
+    <Group
+      ref={groupRef}
+      id={obj.id}
+      x={obj.x} y={obj.y}
+      rotation={obj.rotation}
+      draggable={draggable}
+      onClick={(e) => { e.cancelBubble = true; onSelect(e.evt.shiftKey); }}
+      onTap={(e) => { e.cancelBubble = true; onSelect(); }}
+      onDragEnd={(e) => onDragEnd(snapToGrid(e.target.x()), snapToGrid(e.target.y()))}
+      onTransformEnd={() => {
+        const node = groupRef.current!;
+        const sx = node.scaleX(), sy = node.scaleY();
+        node.scaleX(1); node.scaleY(1);
+        onTransformEnd(snapToGrid(node.x()), snapToGrid(node.y()), Math.max(40, Math.round(obj.width * sx)), Math.max(40, Math.round(obj.height * sy)), node.rotation());
+      }}
+    >
+      {texImg ? (
+        <Rect width={obj.width} height={obj.height}
+          fillPatternImage={texImg}
+          fillPatternRepeat="repeat"
+          fillPatternScaleX={scaleX}
+          fillPatternScaleY={scaleY}
+          cornerRadius={4}
+          stroke={isSelected ? '#3b82f6' : 'rgba(0,0,0,0.15)'}
+          strokeWidth={isSelected ? 2 : 1}
+          opacity={0.9} />
+      ) : (
+        // placeholder пока текстура грузится
+        <Rect width={obj.width} height={obj.height}
+          fill="#e5e7eb" cornerRadius={4}
+          stroke={isSelected ? '#3b82f6' : '#d1d5db'} strokeWidth={isSelected ? 2 : 1}
+          dash={[6, 4]} opacity={0.7} />
+      )}
+      {isSelected && (
+        <Text x={0} y={obj.height / 2 - 8} width={obj.width} align="center"
+          text="Покрытие" fontSize={11} fill={isSelected ? '#3b82f6' : '#6b7280'} fontStyle="bold" />
+      )}
+    </Group>
+  );
+}
+
+// ─── Стол ─────────────────────────────────────────────────────────────────────
+
+function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable, theme }: {
+  obj: TableObject;
+  isSelected: boolean;
+  onSelect: (shiftKey?: boolean) => void;
+  onDragEnd: (x: number, y: number) => void;
+  onTransformEnd: (x: number, y: number, w: number, h: number, r: number) => void;
+  draggable: boolean;
+  theme?: FloorTheme;
+}) {
+  const groupRef = useRef<Konva.Group>(null);
+  const fill   = obj.customFill   ?? theme?.tableStyle?.fill   ?? TABLE_COLORS.fill;
+  const stroke = obj.customStroke ?? theme?.tableStyle?.stroke ?? TABLE_COLORS.stroke;
+  const text   = obj.customTextColor ?? theme?.tableStyle?.text ?? TABLE_COLORS.text;
+  const colors = { fill, stroke, selectedStroke: TABLE_COLORS.selectedStroke, text };
   const cx = obj.width / 2;
+
+  // Загрузка кастомной иконки
+  const [iconImg, setIconImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (!obj.iconUrl) { setIconImg(null); return; }
+    const img = new Image();
+    img.onload = () => setIconImg(img);
+    img.onerror = () => setIconImg(null);
+    img.src = obj.iconUrl;
+  }, [obj.iconUrl]);
   const cy = obj.height / 2;
 
   return (
@@ -144,7 +224,14 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
         onTransformEnd(snapToGrid(node.x()), snapToGrid(node.y()), Math.max(30, Math.round(obj.width * sx)), Math.max(30, Math.round(obj.height * sy)), node.rotation());
       }}
     >
-      {obj.shape === 'ROUND' ? (
+      {/* Фигура стола или кастомная иконка */}
+      {iconImg ? (
+        <KonvaImage
+          image={iconImg}
+          width={obj.width} height={obj.height}
+          cornerRadius={obj.shape === 'ROUND' ? Math.min(obj.width, obj.height) / 2 : 6}
+        />
+      ) : obj.shape === 'ROUND' ? (
         <Ellipse radiusX={cx} radiusY={cy} x={cx} y={cy}
           fill={colors.fill}
           stroke={isSelected ? colors.selectedStroke : colors.stroke}
@@ -157,15 +244,27 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
           strokeWidth={isSelected ? 2.5 : 1.5} />
       )}
 
+      {/* Контур выделения поверх иконки */}
+      {iconImg && isSelected && (
+        obj.shape === 'ROUND'
+          ? <Ellipse radiusX={cx} radiusY={cy} x={cx} y={cy} fill="transparent" stroke={colors.selectedStroke} strokeWidth={2.5} />
+          : <Rect width={obj.width} height={obj.height} cornerRadius={6} fill="transparent" stroke={colors.selectedStroke} strokeWidth={2.5} />
+      )}
+
       {/* Номер стола */}
       <Text x={0} y={cy - 14} width={obj.width} align="center"
         text={obj.label}
-        fontSize={Math.min(16, obj.width / 4)} fontStyle="bold" fill={colors.text} />
+        fontSize={Math.min(16, obj.width / 4)} fontStyle="bold"
+        fill={colors.text}
+        shadowColor={iconImg ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={iconImg ? 2 : 0} />
 
       {/* Вместимость */}
       <Text x={0} y={cy + 5} width={obj.width} align="center"
         text={seatsLabel(obj.minGuests, obj.maxGuests)}
-        fontSize={Math.min(9, obj.width / 9)} fill={colors.text} opacity={0.65} />
+        fontSize={Math.min(9, obj.width / 9)}
+        fill={colors.text}
+        opacity={0.8}
+        shadowColor={iconImg ? 'rgba(0,0,0,0.4)' : undefined} shadowBlur={iconImg ? 2 : 0} />
 
       {/* Теги */}
       {obj.tags && obj.tags.length > 0 && (
@@ -188,7 +287,12 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
   draggable: boolean;
 }) {
   const groupRef = useRef<Konva.Group>(null);
-  const colors = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af', text: '#374151' };
+  const base   = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af', text: '#374151' };
+  const colors = {
+    fill:   obj.customFill   ?? base.fill,
+    stroke: obj.customStroke ?? base.stroke,
+    text:   base.text,
+  };
 
   return (
     <Group
@@ -236,16 +340,20 @@ interface KonvaCanvasProps {
   onCanvasClick: (x: number, y: number) => void;
   onObjectMove: (id: string, x: number, y: number) => void;
   onObjectTransform: (id: string, x: number, y: number, width: number, height: number, rotation: number) => void;
+  /** Вызывается при монтировании — передаёт функцию захвата снапшота */
+  onCaptureReady?: (fn: () => Promise<Blob | null>) => void;
 }
 
 // ─── Компонент ────────────────────────────────────────────────────────────────
 
 export default function KonvaCanvas({
-  floorPlan, selectedIds, activeTool, onSelect, onDeselectAll, onBoxSelect, onCanvasClick, onObjectMove, onObjectTransform,
+  floorPlan, selectedIds, activeTool, onSelect, onDeselectAll, onBoxSelect, onCanvasClick, onObjectMove, onObjectTransform, onCaptureReady,
 }: KonvaCanvasProps) {
   const stageRef       = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
+  const gridLayerRef   = useRef<Konva.Layer>(null);
+  const tableLayerRef  = useRef<Konva.Layer>(null);
   const didInit        = useRef(false);
   const didDrag        = useRef(false);
   const isPanning      = useRef(false);
@@ -428,8 +536,70 @@ export default function KonvaCanvas({
     }
   }, [isSelectMode, isBoxSelectMode, onDeselectAll, onCanvasClick]);
 
+  // Регистрируем функцию захвата снапшота для родительского компонента
+  useEffect(() => {
+    if (!onCaptureReady) return;
+    onCaptureReady(async (): Promise<Blob | null> => {
+      const stage = stageRef.current;
+      if (!stage) return null;
+
+      // Скрываем сетку и столы — в снапшоте только фон + покрытия + декор
+      gridLayerRef.current?.hide();
+      tableLayerRef.current?.hide();
+      stage.batchDraw();
+
+      const sx = stage.scaleX();
+      const dataUrl = stage.toDataURL({
+        x: stage.x(),
+        y: stage.y(),
+        width: floorPlanRef.current.width * sx,
+        height: floorPlanRef.current.height * sx,
+        pixelRatio: 1 / sx,
+        mimeType: 'image/webp',
+        quality: 0.85,
+      });
+
+      gridLayerRef.current?.show();
+      tableLayerRef.current?.show();
+      stage.batchDraw();
+
+      if (!dataUrl || dataUrl.length < 200) return null;
+      try {
+        const { dataURLToBlob } = await import('@/lib/imageCompress');
+        return dataURLToBlob(dataUrl);
+      } catch {
+        return null;
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCaptureReady]);
+
+  const floors = floorPlan.objects.filter((o) => o.type === 'floor') as FloorObject[];
   const tables = floorPlan.objects.filter((o) => o.type === 'table') as TableObject[];
-  const decors = floorPlan.objects.filter((o) => o.type !== 'table') as DecorativeObject[];
+  const decors = floorPlan.objects.filter((o) => o.type !== 'table' && o.type !== 'floor') as DecorativeObject[];
+
+  // Паттерн пола — canvas-текстура для Konva fillPatternImage
+  const patternCanvas = useMemo(() => {
+    if (floorPlan.theme?.bgPatternUrl) return null; // кастомная текстура — приоритет
+    const p = floorPlan.theme?.bgPattern;
+    if (!p || p === 'none') return null;
+    return createPatternCanvas(p, floorPlan.theme?.bgColor);
+  }, [floorPlan.theme?.bgPattern, floorPlan.theme?.bgColor, floorPlan.theme?.bgPatternUrl]);
+
+  // Кастомная текстура пола (загруженный пользователем файл)
+  const [customTextureImg, setCustomTextureImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    const url = floorPlan.theme?.bgPatternUrl;
+    if (!url) { setCustomTextureImg(null); return; }
+    const img = new Image();
+    img.onload = () => setCustomTextureImg(img);
+    img.onerror = () => setCustomTextureImg(null);
+    img.src = url;
+  }, [floorPlan.theme?.bgPatternUrl]);
+
+  const patternScaleX   = floorPlan.theme?.patternScaleX ?? 1;
+  const patternScaleY   = floorPlan.theme?.patternScaleY ?? patternScaleX;
+  const patternRotation = floorPlan.theme?.patternRotation ?? 0;
   const selectedIdsSet = new Set(selectedIds);
 
   // Ждём реального измерения контейнера
@@ -474,11 +644,36 @@ export default function KonvaCanvas({
         onClick={handleStageClick}
         onTap={handleStageClick}
       >
-        {/* Фон + сетка */}
+        {/* Фон (входит в снапшот) */}
         <Layer listening={false}>
-          <Rect width={floorPlan.width} height={floorPlan.height} fill="white"
+          <Rect width={floorPlan.width} height={floorPlan.height}
+            fill={patternCanvas || customTextureImg ? undefined : (floorPlan.theme?.bgColor ?? 'white')}
+            fillPatternImage={customTextureImg ?? (patternCanvas as any)}
+            fillPatternRepeat="repeat"
+            fillPatternScaleX={patternScaleX}
+            fillPatternScaleY={patternScaleY}
+            fillPatternRotation={patternRotation}
             shadowColor="rgba(0,0,0,0.12)" shadowBlur={12} shadowOffsetX={2} shadowOffsetY={2} />
+        </Layer>
+
+        {/* Сетка (только редактор, скрывается при захвате снапшота) */}
+        <Layer ref={gridLayerRef} listening={false}>
           {buildGrid(floorPlan.width, floorPlan.height)}
+        </Layer>
+
+        {/* Покрытие пола (слои) */}
+        <Layer>
+          {floors.map((obj) => (
+            <FloorShape
+              key={obj.id}
+              obj={obj}
+              isSelected={selectedIdsSet.has(obj.id)}
+              onSelect={(shiftKey) => isSelectMode && onSelect(obj.id, shiftKey)}
+              onDragEnd={(x, y) => onObjectMove(obj.id, x, y)}
+              onTransformEnd={(x, y, w, h, r) => onObjectTransform(obj.id, x, y, w, h, r)}
+              draggable={isSelectMode}
+            />
+          ))}
         </Layer>
 
         {/* Декор */}
@@ -496,8 +691,8 @@ export default function KonvaCanvas({
           ))}
         </Layer>
 
-        {/* Столы */}
-        <Layer>
+        {/* Столы (скрываются при захвате снапшота) */}
+        <Layer ref={tableLayerRef}>
           {tables.map((obj) => (
             <TableShape
               key={obj.id}
@@ -507,6 +702,7 @@ export default function KonvaCanvas({
               onDragEnd={(x, y) => onObjectMove(obj.id, x, y)}
               onTransformEnd={(x, y, w, h, r) => onObjectTransform(obj.id, x, y, w, h, r)}
               draggable={isSelectMode}
+              theme={floorPlan.theme}
             />
           ))}
           <Transformer

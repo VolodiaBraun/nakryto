@@ -10,6 +10,11 @@ const ALLOWED_TYPES: Record<string, string> = {
   'image/png': '.png',
   'image/webp': '.webp',
 };
+
+const ALLOWED_ICON_TYPES: Record<string, string> = {
+  ...ALLOWED_TYPES,
+  'image/svg+xml': '.svg',
+};
 const MAX_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 const MAX_TABLE_PHOTOS = 5;
 const MAX_HALL_PHOTOS = 15;
@@ -158,8 +163,9 @@ export class UploadsService {
   private async generatePresignedUrl(
     prefix: string,
     contentType: string,
+    typeMap: Record<string, string> = ALLOWED_TYPES,
   ): Promise<{ uploadUrl: string; publicUrl: string }> {
-    const ext = ALLOWED_TYPES[contentType] ?? '.jpg';
+    const ext = typeMap[contentType] ?? '.jpg';
     const key = `${prefix}/${uuidv4()}${ext}`;
 
     const command = new PutObjectCommand({
@@ -175,6 +181,26 @@ export class UploadsService {
 
     return { uploadUrl, publicUrl };
   }
+
+  // ─── Иконки столов ──────────────────────────────────────────────────────────
+
+  /** Presigned URL для загрузки кастомной иконки стола (PREMIUM) */
+  async presignIconUpload(restaurantId: string, contentType: string) {
+    if (!ALLOWED_ICON_TYPES[contentType]) {
+      throw new BadRequestException('Допустимые форматы: JPEG, PNG, WebP, SVG');
+    }
+    return this.generatePresignedUrl(`icons/${restaurantId}`, contentType, ALLOWED_ICON_TYPES);
+  }
+
+  /** Presigned URL для загрузки кастомной текстуры пола (PREMIUM) */
+  async presignTextureUpload(restaurantId: string, contentType: string) {
+    if (!ALLOWED_ICON_TYPES[contentType]) {
+      throw new BadRequestException('Допустимые форматы: JPEG, PNG, WebP, SVG');
+    }
+    return this.generatePresignedUrl(`textures/${restaurantId}`, contentType, ALLOWED_ICON_TYPES);
+  }
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private validateContentType(contentType: string) {
     if (!ALLOWED_TYPES[contentType]) {
