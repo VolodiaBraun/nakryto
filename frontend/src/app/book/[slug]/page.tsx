@@ -164,18 +164,20 @@ export default function BookPage({ params }: { params: { slug: string } }) {
   const { data: restaurant, isLoading, error: restaurantError } = useQuery<Restaurant>({
     queryKey: ['public', slug],
     queryFn: () => publicApi.getRestaurant(slug) as any,
+    staleTime: 5 * 60_000, // SSR уже загрузил — не рефетчим 5 мин
   });
 
   const { data: halls = [] } = useQuery<Hall[]>({
     queryKey: ['public', slug, 'halls'],
     queryFn: () => publicApi.getHalls(slug) as any,
-    enabled: !!restaurant,
+    // enabled: !!restaurant убрано — залы зависят только от slug
+    staleTime: 5 * 60_000,
   });
 
   const { data: statusesRaw } = useQuery<any[]>({
     queryKey: ['tableStatuses', slug, selectedDate],
     queryFn: () => publicApi.getTableStatuses(slug, selectedDate) as any,
-    enabled: !!restaurant,
+    // enabled: !!restaurant убрано — статусы грузим сразу, не ждём ресторан
     staleTime: 0,
     refetchInterval: 30_000,
     refetchOnWindowFocus: true,
