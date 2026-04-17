@@ -771,40 +771,40 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
         </div>
       </Field>
 
-      {isPremium && (
-        <>
-          <SectionDivider label="Внешний вид стола" />
+      <>
+        <SectionDivider label="Внешний вид стола" />
 
-          {/* Иконка */}
-          <div>
-            <p className="text-xs text-gray-500 mb-1.5">Иконка стола</p>
-            <div className="grid grid-cols-4 gap-1 mb-1.5">
-              {/* Стандарт */}
+        {/* Иконка */}
+        <div>
+          <p className="text-xs text-gray-500 mb-1.5">Иконка стола</p>
+          <div className="grid grid-cols-4 gap-1 mb-1.5">
+            {/* Стандарт */}
+            <button
+              onClick={() => onUpdate({ iconUrl: undefined })}
+              title="Стандарт"
+              className={`h-10 rounded-lg border text-xs font-medium transition-all ${
+                !table.iconUrl ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-gray-300 text-gray-500'
+              }`}
+            >
+              ABC
+            </button>
+            {TABLE_ICONS.map((icon) => (
               <button
-                onClick={() => onUpdate({ iconUrl: undefined })}
-                title="Стандарт"
-                className={`h-10 rounded-lg border text-xs font-medium transition-all ${
-                  !table.iconUrl ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 hover:border-gray-300 text-gray-500'
+                key={icon.id}
+                onClick={() => onUpdate({ iconUrl: icon.dataUrl })}
+                title={icon.label}
+                className={`h-10 rounded-lg border overflow-hidden transition-all ${
+                  table.iconUrl === icon.dataUrl ? 'border-blue-500 ring-1 ring-blue-400' : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
-                ABC
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={icon.dataUrl} alt={icon.label} className="w-full h-full object-cover" />
               </button>
-              {TABLE_ICONS.map((icon) => (
-                <button
-                  key={icon.id}
-                  onClick={() => onUpdate({ iconUrl: icon.dataUrl })}
-                  title={icon.label}
-                  className={`h-10 rounded-lg border overflow-hidden transition-all ${
-                    table.iconUrl === icon.dataUrl ? 'border-blue-500 ring-1 ring-blue-400' : 'border-gray-200 hover:border-gray-300'
-                  }`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={icon.dataUrl} alt={icon.label} className="w-full h-full object-cover" />
-                </button>
-              ))}
-            </div>
+            ))}
+          </div>
 
-            {/* Загрузка своей иконки */}
+          {/* Загрузка своей иконки — только PREMIUM */}
+          {isPremium ? (
             <label className={`relative flex items-center justify-center gap-1.5 w-full py-1.5 border border-dashed rounded-lg text-xs cursor-pointer transition-all ${
               iconUploading ? 'border-blue-300 text-blue-400 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
             }`}>
@@ -817,62 +817,67 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
               />
               {iconUploading ? '⏳ Загрузка...' : '📤 Загрузить свою (PNG/SVG)'}
             </label>
+          ) : (
+            <div className="py-1 text-center rounded-lg border border-gray-100 bg-gray-50">
+              <span className="text-[10px] text-gray-400">Своя иконка — тариф </span>
+              <Link href="/dashboard/billing" className="text-[10px] text-purple-600 hover:underline">Premium</Link>
+            </div>
+          )}
 
-            {/* Показываем кастомную иконку + кнопку сброса */}
-            {table.iconUrl && !TABLE_ICONS.some((i) => i.dataUrl === table.iconUrl) && (
-              <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-gray-200">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={table.iconUrl} alt="Иконка" className="w-10 h-10 rounded object-cover border border-gray-200" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-gray-500 truncate">Своя иконка</p>
-                </div>
-                <button onClick={() => onUpdate({ iconUrl: undefined })} className="text-xs text-red-400 hover:text-red-600" title="Удалить">✕</button>
+          {/* Показываем кастомную иконку + кнопку сброса */}
+          {table.iconUrl && !TABLE_ICONS.some((i) => i.dataUrl === table.iconUrl) && (
+            <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-gray-200">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={table.iconUrl} alt="Иконка" className="w-10 h-10 rounded object-cover border border-gray-200" />
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] text-gray-500 truncate">Своя иконка</p>
               </div>
+              <button onClick={() => onUpdate({ iconUrl: undefined })} className="text-xs text-red-400 hover:text-red-600" title="Удалить">✕</button>
+            </div>
+          )}
+          {iconError && <p className="text-[10px] text-red-500 mt-1">{iconError}</p>}
+        </div>
+
+        {/* Цвет заливки */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500">Цвет заливки</span>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={table.customFill ?? '#dcfce7'}
+              onChange={(e) => onUpdate({ customFill: e.target.value })}
+              className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
+            />
+            {table.customFill && (
+              <button
+                onClick={() => onUpdate({ customFill: undefined })}
+                className="text-xs text-gray-400 hover:text-gray-600"
+                title="Сбросить"
+              >✕</button>
             )}
-            {iconError && <p className="text-[10px] text-red-500 mt-1">{iconError}</p>}
           </div>
+        </div>
 
-          {/* Цвет заливки */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">Цвет заливки</span>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="color"
-                value={table.customFill ?? '#dcfce7'}
-                onChange={(e) => onUpdate({ customFill: e.target.value })}
-                className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
-              />
-              {table.customFill && (
-                <button
-                  onClick={() => onUpdate({ customFill: undefined })}
-                  className="text-xs text-gray-400 hover:text-gray-600"
-                  title="Сбросить"
-                >✕</button>
-              )}
-            </div>
+        {/* Цвет текста */}
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500">Цвет текста</span>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="color"
+              value={table.customTextColor ?? '#166534'}
+              onChange={(e) => onUpdate({ customTextColor: e.target.value })}
+              className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
+            />
+            {table.customTextColor && (
+              <button
+                onClick={() => onUpdate({ customTextColor: undefined })}
+                className="text-xs text-gray-400 hover:text-gray-600"
+                title="Сбросить"
+              >✕</button>
+            )}
           </div>
-
-          {/* Цвет текста */}
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-500">Цвет текста</span>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="color"
-                value={table.customTextColor ?? '#166534'}
-                onChange={(e) => onUpdate({ customTextColor: e.target.value })}
-                className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
-              />
-              {table.customTextColor && (
-                <button
-                  onClick={() => onUpdate({ customTextColor: undefined })}
-                  className="text-xs text-gray-400 hover:text-gray-600"
-                  title="Сбросить"
-                >✕</button>
-              )}
-            </div>
-          </div>
-        </>
-      )}
+        </div>
+      </>
     </div>
   );
 }
@@ -1048,8 +1053,8 @@ function DecorProperties({ decor, onUpdate, onRotate, onDelete }: {
         </div>
       </div>
 
-      {/* Цвет — только для не-стульев (PREMIUM) */}
-      {!isChair && isPremium && (
+      {/* Цвет — только для не-стульев */}
+      {!isChair && (
         <>
           <SectionDivider label="Цвет элемента" />
           <div className="flex items-center justify-between">
@@ -1280,68 +1285,54 @@ function CanvasProperties({ floorPlan, onChange, onAddFloor }: {
 
       <SectionDivider label="Оформление зала" />
 
-      {!isPremium ? (
-        <div className="rounded-xl border border-purple-200 bg-purple-50 p-3 text-center space-y-1.5">
-          <p className="text-2xl">🎨</p>
-          <p className="text-xs font-medium text-purple-800">Кастомизация визуала</p>
-          <p className="text-xs text-purple-600 leading-relaxed">
-            Цвета зала, стиль столов и стен — доступны на тарифе Premium
-          </p>
-          <Link
-            href="/dashboard/billing"
-            className="inline-block mt-1 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg px-3 py-1.5 transition-colors"
-          >
-            Перейти к тарифам →
-          </Link>
+      <div className="space-y-3">
+        {/* Пресеты */}
+        <div className="grid grid-cols-3 gap-1.5">
+          {HALL_THEME_PRESETS.map((p) => {
+            const active = floorPlan.theme?.preset === p.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => applyPreset(p)}
+                title={p.label}
+                className={`flex flex-col items-center gap-1 p-1.5 rounded-lg border text-xs transition-all ${
+                  active ? 'border-blue-500 ring-1 ring-blue-400 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <span
+                  className="w-full h-5 rounded"
+                  style={{ background: `linear-gradient(135deg, ${p.bgColor} 50%, ${p.table.fill} 50%)` }}
+                />
+                <span className="text-[10px] text-gray-600 leading-none">{p.label}</span>
+              </button>
+            );
+          })}
         </div>
-      ) : (
-        <div className="space-y-3">
-          {/* Пресеты */}
-          <div className="grid grid-cols-3 gap-1.5">
-            {HALL_THEME_PRESETS.map((p) => {
-              const active = floorPlan.theme?.preset === p.id;
+
+        {/* Текстура пола */}
+        <div>
+          <p className="text-xs text-gray-500 mb-1.5">Текстура пола</p>
+          <div className="grid grid-cols-3 gap-1">
+            {PATTERN_OPTIONS.map((p) => {
+              const active = !floorPlan.theme?.bgPatternUrl && (floorPlan.theme?.bgPattern ?? 'none') === p.id;
               return (
                 <button
                   key={p.id}
-                  onClick={() => applyPreset(p)}
-                  title={p.label}
-                  className={`flex flex-col items-center gap-1 p-1.5 rounded-lg border text-xs transition-all ${
+                  onClick={() => updateTheme({ bgPattern: p.id as any, bgPatternUrl: undefined })}
+                  className={`flex flex-col items-center gap-0.5 p-1 rounded-lg border text-[10px] transition-all ${
                     active ? 'border-blue-500 ring-1 ring-blue-400 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
                   }`}
                 >
-                  <span
-                    className="w-full h-5 rounded"
-                    style={{ background: `linear-gradient(135deg, ${p.bgColor} 50%, ${p.table.fill} 50%)` }}
-                  />
-                  <span className="text-[10px] text-gray-600 leading-none">{p.label}</span>
+                  <span className="w-full h-4 rounded-sm border border-gray-100"
+                    style={{ background: p.preview }} />
+                  <span className="text-gray-600">{p.label}</span>
                 </button>
               );
             })}
           </div>
 
-          {/* Текстура пола */}
-          <div>
-            <p className="text-xs text-gray-500 mb-1.5">Текстура пола</p>
-            <div className="grid grid-cols-3 gap-1">
-              {PATTERN_OPTIONS.map((p) => {
-                const active = !floorPlan.theme?.bgPatternUrl && (floorPlan.theme?.bgPattern ?? 'none') === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    onClick={() => updateTheme({ bgPattern: p.id as any, bgPatternUrl: undefined })}
-                    className={`flex flex-col items-center gap-0.5 p-1 rounded-lg border text-[10px] transition-all ${
-                      active ? 'border-blue-500 ring-1 ring-blue-400 bg-blue-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <span className="w-full h-4 rounded-sm border border-gray-100"
-                      style={{ background: p.preview }} />
-                    <span className="text-gray-600">{p.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Загрузка своей текстуры */}
+          {/* Загрузка своей текстуры — только PREMIUM */}
+          {isPremium ? (
             <label className={`mt-1.5 relative flex items-center justify-center gap-1.5 w-full py-1.5 border border-dashed rounded-lg text-xs cursor-pointer transition-all ${
               textureUploading ? 'border-blue-300 text-blue-400 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
             }`}>
@@ -1354,120 +1345,124 @@ function CanvasProperties({ floorPlan, onChange, onAddFloor }: {
               />
               {textureUploading ? '⏳ Загрузка...' : '📤 Своя текстура (PNG/JPG)'}
             </label>
-
-            {/* Превью кастомной текстуры */}
-            {floorPlan.theme?.bgPatternUrl && (
-              <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-blue-200">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={floorPlan.theme.bgPatternUrl} alt="Текстура" className="w-10 h-10 rounded object-cover border border-gray-200 flex-shrink-0" />
-                <span className="text-[10px] text-gray-600 flex-1 truncate">Своя текстура</span>
-                <button onClick={() => updateTheme({ bgPatternUrl: undefined })} className="text-xs text-red-400 hover:text-red-600 flex-shrink-0" title="Удалить">✕</button>
-              </div>
-            )}
-            {textureError && <p className="text-[10px] text-red-500 mt-1">{textureError}</p>}
-          </div>
-
-          {/* Масштаб и поворот — показываем когда выбрана текстура (встроенная или своя) */}
-          {((floorPlan.theme?.bgPattern && floorPlan.theme.bgPattern !== 'none') || floorPlan.theme?.bgPatternUrl) && (
-            <div className="space-y-2">
-              <div>
-                <p className="text-xs text-gray-500 mb-1">Размер плитки</p>
-                <div className="grid grid-cols-2 gap-1.5">
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-0.5">Ширина ×</label>
-                    <input
-                      type="number" min={0.2} max={10} step={0.1}
-                      value={Number((floorPlan.theme?.patternScaleX ?? 1).toFixed(1))}
-                      onChange={(e) => updateTheme({ patternScaleX: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
-                      className="input text-xs py-1 w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-0.5">Высота ×</label>
-                    <input
-                      type="number" min={0.2} max={10} step={0.1}
-                      value={Number((floorPlan.theme?.patternScaleY ?? floorPlan.theme?.patternScaleX ?? 1).toFixed(1))}
-                      onChange={(e) => updateTheme({ patternScaleY: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
-                      className="input text-xs py-1 w-full"
-                    />
-                  </div>
-                </div>
-                <button
-                  onClick={() => updateTheme({ patternScaleX: 1, patternScaleY: 1 })}
-                  className="mt-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
-                >
-                  сбросить (1×1)
-                </button>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500 mb-1">Поворот</p>
-                <div className="flex gap-1">
-                  {[0, 45, 90, 135].map((r) => {
-                    const active = (floorPlan.theme?.patternRotation ?? 0) === r;
-                    return (
-                      <button key={r} onClick={() => updateTheme({ patternRotation: r })}
-                        className={`flex-1 text-[10px] py-1 rounded border transition-all ${
-                          active ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                        }`}
-                      >
-                        {r}°
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+          ) : (
+            <div className="mt-1.5 py-1 text-center rounded-lg border border-gray-100 bg-gray-50">
+              <span className="text-[10px] text-gray-400">Своя текстура — тариф </span>
+              <Link href="/dashboard/billing" className="text-[10px] text-purple-600 hover:underline">Premium</Link>
             </div>
           )}
 
-          {/* Кастомные цвета */}
+          {/* Превью кастомной текстуры */}
+          {floorPlan.theme?.bgPatternUrl && (
+            <div className="mt-1.5 flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-blue-200">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={floorPlan.theme.bgPatternUrl} alt="Текстура" className="w-10 h-10 rounded object-cover border border-gray-200 flex-shrink-0" />
+              <span className="text-[10px] text-gray-600 flex-1 truncate">Своя текстура</span>
+              <button onClick={() => updateTheme({ bgPatternUrl: undefined })} className="text-xs text-red-400 hover:text-red-600 flex-shrink-0" title="Удалить">✕</button>
+            </div>
+          )}
+          {textureError && <p className="text-[10px] text-red-500 mt-1">{textureError}</p>}
+        </div>
+
+        {/* Масштаб и поворот — показываем когда выбрана текстура */}
+        {((floorPlan.theme?.bgPattern && floorPlan.theme.bgPattern !== 'none') || floorPlan.theme?.bgPatternUrl) && (
           <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">Цвет пола</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="color"
-                  value={floorPlan.theme?.bgColor ?? '#ffffff'}
-                  onChange={(e) => updateTheme({ preset: undefined, bgColor: e.target.value })}
-                  className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
-                  title="Цвет фона зала"
-                />
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Размер плитки</p>
+              <div className="grid grid-cols-2 gap-1.5">
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Ширина ×</label>
+                  <input
+                    type="number" min={0.2} max={10} step={0.1}
+                    value={Number((floorPlan.theme?.patternScaleX ?? 1).toFixed(1))}
+                    onChange={(e) => updateTheme({ patternScaleX: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
+                    className="input text-xs py-1 w-full"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-0.5">Высота ×</label>
+                  <input
+                    type="number" min={0.2} max={10} step={0.1}
+                    value={Number((floorPlan.theme?.patternScaleY ?? floorPlan.theme?.patternScaleX ?? 1).toFixed(1))}
+                    onChange={(e) => updateTheme({ patternScaleY: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
+                    className="input text-xs py-1 w-full"
+                  />
+                </div>
               </div>
+              <button
+                onClick={() => updateTheme({ patternScaleX: 1, patternScaleY: 1 })}
+                className="mt-1 text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                сбросить (1×1)
+              </button>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-gray-500">Цвет свободных столов</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="color"
-                  value={floorPlan.theme?.tableStyle?.fill ?? '#dcfce7'}
-                  onChange={(e) => updateTheme({
-                    preset: undefined,
-                    tableStyle: {
-                      fill: e.target.value,
-                      stroke: floorPlan.theme?.tableStyle?.stroke ?? '#86efac',
-                      text: floorPlan.theme?.tableStyle?.text ?? '#166534',
-                    },
-                  })}
-                  className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
-                  title="Цвет заливки свободных столов"
-                />
+            <div>
+              <p className="text-xs text-gray-500 mb-1">Поворот</p>
+              <div className="flex gap-1">
+                {[0, 45, 90, 135].map((r) => {
+                  const active = (floorPlan.theme?.patternRotation ?? 0) === r;
+                  return (
+                    <button key={r} onClick={() => updateTheme({ patternRotation: r })}
+                      className={`flex-1 text-[10px] py-1 rounded border transition-all ${
+                        active ? 'border-blue-500 bg-blue-50 text-blue-700 font-medium' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                      }`}
+                    >
+                      {r}°
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>
+        )}
 
-          {floorPlan.theme && (
-            <button
-              onClick={resetTheme}
-              className="w-full text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors"
-            >
-              Сбросить оформление
-            </button>
-          )}
+        {/* Цвета */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Цвет пола</span>
+            <input
+              type="color"
+              value={floorPlan.theme?.bgColor ?? '#ffffff'}
+              onChange={(e) => updateTheme({ preset: undefined, bgColor: e.target.value })}
+              className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
+              title="Цвет фона зала"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-gray-500">Цвет свободных столов</span>
+            <input
+              type="color"
+              value={floorPlan.theme?.tableStyle?.fill ?? '#dcfce7'}
+              onChange={(e) => updateTheme({
+                preset: undefined,
+                tableStyle: {
+                  fill: e.target.value,
+                  stroke: floorPlan.theme?.tableStyle?.stroke ?? '#86efac',
+                  text: floorPlan.theme?.tableStyle?.text ?? '#166534',
+                },
+              })}
+              className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
+              title="Цвет заливки свободных столов"
+            />
+          </div>
+        </div>
 
-          <SectionDivider label="Покрытие пола" />
+        {floorPlan.theme && (
+          <button
+            onClick={resetTheme}
+            className="w-full text-xs text-gray-400 hover:text-gray-600 py-1 transition-colors"
+          >
+            Сбросить оформление
+          </button>
+        )}
 
+        {/* Покрытие пола — загрузка только PREMIUM */}
+        <SectionDivider label="Покрытие пола" />
+
+        {isPremium ? (
           <div>
             <p className="text-xs text-gray-500 mb-1 leading-snug">
-              Добавьте область с текстурой (плитка, паркет, ковёр). Можно несколько зон — они слоем под столами.
+              Добавьте область с текстурой (плитка, паркет, ковёр). Можно несколько зон — под столами.
             </p>
             <label className={`relative flex items-center justify-center gap-1.5 w-full py-2 border border-dashed rounded-lg text-xs cursor-pointer transition-all ${
               floorUploading ? 'border-blue-300 text-blue-400 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
@@ -1486,8 +1481,18 @@ function CanvasProperties({ floorPlan, onChange, onAddFloor }: {
               После загрузки покрытие появится в центре зала. Перетащите и растяните.
             </p>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="rounded-lg border border-purple-100 bg-purple-50 p-2.5 text-center space-y-1">
+            <p className="text-xs text-purple-700">Покрытие пола — зоны с кастомной текстурой</p>
+            <Link
+              href="/dashboard/billing"
+              className="inline-block text-[10px] font-medium text-white bg-purple-600 hover:bg-purple-700 rounded px-2.5 py-1 transition-colors"
+            >
+              Premium →
+            </Link>
+          </div>
+        )}
+      </div>
 
       <SectionDivider label="Горячие клавиши" />
       <div className="text-xs text-gray-400 space-y-1">
