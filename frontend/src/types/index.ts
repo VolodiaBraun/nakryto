@@ -102,6 +102,7 @@ export interface FloorPlan {
   height: number;
   objects: FloorPlanObject[];
   theme?: FloorTheme;
+  snapshotUrl?: string; // статический снимок (фон + декор) для быстрой загрузки страницы гостя
 }
 
 export interface FloorObject {

@@ -7,6 +7,7 @@ import type { Hall, FloorPlan, FloorPlanObject, FloorTheme, TableObject, Decorat
 import { TABLE_TAGS } from '@/lib/tableTags';
 import { TABLE_ICONS } from '@/lib/tableIcons';
 import { PATTERN_OPTIONS } from '@/lib/floorPatterns';
+import { compressImage, IMAGE_LIMITS } from '@/lib/imageCompress';
 import { v4 as uuidv4 } from 'uuid';
 import { useAuth } from '@/context/AuthContext';
 
@@ -129,7 +130,8 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
-  const tableCounter = useRef(floorPlan.objects.filter((o) => o.type === 'table').length + 1);
+  const tableCounter  = useRef(floorPlan.objects.filter((o) => o.type === 'table').length + 1);
+  const captureRef    = useRef<(() => Promise<Blob | null>) | null>(null);
 
   // ─── Стабильные рефы (для keyboard handler без stale closure) ──────────────
   const selectedIdsRef = useRef<string[]>([]);
@@ -351,13 +353,49 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
     return () => document.removeEventListener('keydown', handler);
   }, [deleteSelected]);
 
-  // ─── Сохранение ────────────────────────────────────────────────────────────
+  // ─── Снапшот и сохранение ──────────────────────────────────────────────────
+
+  const uploadSnapshot = async (blob: Blob): Promise<string | null> => {
+    try {
+      const token = localStorage.getItem('accessToken') ?? '';
+      const res = await fetch(`/api/uploads/textures/presign?contentType=image%2Fwebp`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return null;
+      const json = await res.json();
+      const { uploadUrl, publicUrl } = json.data ?? json;
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: blob, headers: { 'Content-Type': 'image/webp' } });
+      return s3Res.ok ? publicUrl : null;
+    } catch {
+      return null;
+    }
+  };
 
   const handleSave = async () => {
     if (!onSave) return;
     setSaving(true);
     try {
-      await onSave(floorPlan);
+      let planToSave = floorPlanRef.current;
+
+      // Снапшот перед сохранением (не блокирует при ошибке)
+      const captureFn = captureRef.current;
+      if (captureFn) {
+        try {
+          const blob = await captureFn();
+          if (blob) {
+            const snapshotUrl = await uploadSnapshot(blob);
+            if (snapshotUrl) {
+              planToSave = { ...planToSave, snapshotUrl };
+              setFloorPlan(planToSave);
+            }
+          }
+        } catch {
+          // снапшот не критичен — продолжаем сохранение
+        }
+      }
+
+      await onSave(planToSave);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -502,6 +540,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
             onCanvasClick={handleCanvasClick}
             onObjectMove={handleObjectMove}
             onObjectTransform={handleObjectTransform}
+            onCaptureReady={(fn) => { captureRef.current = fn; }}
           />
         </div>
 
@@ -625,15 +664,17 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
     setIconError('');
     setIconUploading(true);
     try {
+      const { maxSizeBytes, maxWidth, maxHeight } = IMAGE_LIMITS.ICON;
+      const compressed = await compressImage(file, maxSizeBytes, maxWidth, maxHeight);
       const token = localStorage.getItem('accessToken') ?? '';
-      const res = await fetch(`/api/uploads/icons/presign?contentType=${encodeURIComponent(file.type)}`, {
+      const res = await fetch(`/api/uploads/icons/presign?contentType=image%2Fwebp`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.message ?? 'Ошибка'); }
       const json = await res.json();
       const { uploadUrl, publicUrl } = json.data ?? json;
-      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: compressed, headers: { 'Content-Type': 'image/webp' } });
       if (!s3Res.ok) throw new Error(`Ошибка загрузки в хранилище: ${s3Res.status}`);
       onUpdate({ iconUrl: publicUrl });
     } catch (e: any) {
@@ -1030,15 +1071,17 @@ function CanvasProperties({ floorPlan, onChange, onAddFloor }: {
     setTextureError('');
     setTextureUploading(true);
     try {
+      const { maxSizeBytes, maxWidth, maxHeight } = IMAGE_LIMITS.TEXTURE;
+      const compressed = await compressImage(file, maxSizeBytes, maxWidth, maxHeight);
       const token = localStorage.getItem('accessToken') ?? '';
-      const res = await fetch(`/api/uploads/textures/presign?contentType=${encodeURIComponent(file.type)}`, {
+      const res = await fetch(`/api/uploads/textures/presign?contentType=image%2Fwebp`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message ?? e.message ?? 'Ошибка'); }
       const json = await res.json();
       const { uploadUrl, publicUrl } = json.data ?? json;
-      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: compressed, headers: { 'Content-Type': 'image/webp' } });
       if (!s3Res.ok) throw new Error(`Ошибка загрузки: ${s3Res.status}`);
       updateTheme({ bgPatternUrl: publicUrl, bgPattern: 'none' });
     } catch (e: any) {
@@ -1052,15 +1095,17 @@ function CanvasProperties({ floorPlan, onChange, onAddFloor }: {
     setFloorError('');
     setFloorUploading(true);
     try {
+      const { maxSizeBytes, maxWidth, maxHeight } = IMAGE_LIMITS.TEXTURE;
+      const compressed = await compressImage(file, maxSizeBytes, maxWidth, maxHeight);
       const token = localStorage.getItem('accessToken') ?? '';
-      const res = await fetch(`/api/uploads/textures/presign?contentType=${encodeURIComponent(file.type)}`, {
+      const res = await fetch(`/api/uploads/textures/presign?contentType=image%2Fwebp`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message ?? e.message ?? 'Ошибка'); }
       const json = await res.json();
       const { uploadUrl, publicUrl } = json.data ?? json;
-      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: compressed, headers: { 'Content-Type': 'image/webp' } });
       if (!s3Res.ok) throw new Error(`Ошибка загрузки: ${s3Res.status}`);
       onAddFloor(publicUrl);
     } catch (e: any) {

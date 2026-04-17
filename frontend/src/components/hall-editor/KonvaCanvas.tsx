@@ -340,16 +340,20 @@ interface KonvaCanvasProps {
   onCanvasClick: (x: number, y: number) => void;
   onObjectMove: (id: string, x: number, y: number) => void;
   onObjectTransform: (id: string, x: number, y: number, width: number, height: number, rotation: number) => void;
+  /** Вызывается при монтировании — передаёт функцию захвата снапшота */
+  onCaptureReady?: (fn: () => Promise<Blob | null>) => void;
 }
 
 // ─── Компонент ────────────────────────────────────────────────────────────────
 
 export default function KonvaCanvas({
-  floorPlan, selectedIds, activeTool, onSelect, onDeselectAll, onBoxSelect, onCanvasClick, onObjectMove, onObjectTransform,
+  floorPlan, selectedIds, activeTool, onSelect, onDeselectAll, onBoxSelect, onCanvasClick, onObjectMove, onObjectTransform, onCaptureReady,
 }: KonvaCanvasProps) {
   const stageRef       = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
+  const gridLayerRef   = useRef<Konva.Layer>(null);
+  const tableLayerRef  = useRef<Konva.Layer>(null);
   const didInit        = useRef(false);
   const didDrag        = useRef(false);
   const isPanning      = useRef(false);
@@ -532,6 +536,44 @@ export default function KonvaCanvas({
     }
   }, [isSelectMode, isBoxSelectMode, onDeselectAll, onCanvasClick]);
 
+  // Регистрируем функцию захвата снапшота для родительского компонента
+  useEffect(() => {
+    if (!onCaptureReady) return;
+    onCaptureReady(async (): Promise<Blob | null> => {
+      const stage = stageRef.current;
+      if (!stage) return null;
+
+      // Скрываем сетку и столы — в снапшоте только фон + покрытия + декор
+      gridLayerRef.current?.hide();
+      tableLayerRef.current?.hide();
+      stage.batchDraw();
+
+      const sx = stage.scaleX();
+      const dataUrl = stage.toDataURL({
+        x: stage.x(),
+        y: stage.y(),
+        width: floorPlanRef.current.width * sx,
+        height: floorPlanRef.current.height * sx,
+        pixelRatio: 1 / sx,
+        mimeType: 'image/webp',
+        quality: 0.85,
+      });
+
+      gridLayerRef.current?.show();
+      tableLayerRef.current?.show();
+      stage.batchDraw();
+
+      if (!dataUrl || dataUrl.length < 200) return null;
+      try {
+        const { dataURLToBlob } = await import('@/lib/imageCompress');
+        return dataURLToBlob(dataUrl);
+      } catch {
+        return null;
+      }
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [onCaptureReady]);
+
   const floors = floorPlan.objects.filter((o) => o.type === 'floor') as FloorObject[];
   const tables = floorPlan.objects.filter((o) => o.type === 'table') as TableObject[];
   const decors = floorPlan.objects.filter((o) => o.type !== 'table' && o.type !== 'floor') as DecorativeObject[];
@@ -602,7 +644,7 @@ export default function KonvaCanvas({
         onClick={handleStageClick}
         onTap={handleStageClick}
       >
-        {/* Фон + сетка */}
+        {/* Фон (входит в снапшот) */}
         <Layer listening={false}>
           <Rect width={floorPlan.width} height={floorPlan.height}
             fill={patternCanvas || customTextureImg ? undefined : (floorPlan.theme?.bgColor ?? 'white')}
@@ -612,6 +654,10 @@ export default function KonvaCanvas({
             fillPatternScaleY={patternScaleY}
             fillPatternRotation={patternRotation}
             shadowColor="rgba(0,0,0,0.12)" shadowBlur={12} shadowOffsetX={2} shadowOffsetY={2} />
+        </Layer>
+
+        {/* Сетка (только редактор, скрывается при захвате снапшота) */}
+        <Layer ref={gridLayerRef} listening={false}>
           {buildGrid(floorPlan.width, floorPlan.height)}
         </Layer>
 
@@ -645,8 +691,8 @@ export default function KonvaCanvas({
           ))}
         </Layer>
 
-        {/* Столы */}
-        <Layer>
+        {/* Столы (скрываются при захвате снапшота) */}
+        <Layer ref={tableLayerRef}>
           {tables.map((obj) => (
             <TableShape
               key={obj.id}

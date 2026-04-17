@@ -122,7 +122,8 @@ export default function BookingMapKonva({
   const [hoveredId, setHoveredId]     = useState<string | null>(null);
   const [tooltip, setTooltip]         = useState<{ x: number; y: number; text: string } | null>(null);
   const [iconImages, setIconImages]   = useState<Record<string, HTMLImageElement>>({});
-  const [floorImages, setFloorImages] = useState<Record<string, HTMLImageElement>>({});
+  const [floorImages, setFloorImages]   = useState<Record<string, HTMLImageElement>>({});
+  const [snapshotImg, setSnapshotImg]   = useState<HTMLImageElement | null>(null);
   const [containerW, setContainerW]   = useState(0);
   const [containerH, setContainerH]  = useState(0);
   const [scale, setScale]             = useState(1);
@@ -207,6 +208,16 @@ export default function BookingMapKonva({
   const patternScaleX   = fp.theme?.patternScaleX ?? 1;
   const patternScaleY   = fp.theme?.patternScaleY ?? patternScaleX;
   const patternRotation = fp.theme?.patternRotation ?? 0;
+
+  // Preload снапшота зала (быстрый путь — 1 запрос вместо N)
+  useEffect(() => {
+    const url = fp.snapshotUrl;
+    if (!url) { setSnapshotImg(null); return; }
+    const img = new Image();
+    img.onload = () => setSnapshotImg(img);
+    img.onerror = () => setSnapshotImg(null);
+    img.src = url;
+  }, [fp.snapshotUrl]);
 
   // Preload текстур покрытий пола
   useEffect(() => {
@@ -311,69 +322,71 @@ export default function BookingMapKonva({
           onWheel={handleWheel}
           style={{ background: bgColor, display: 'block', boxShadow: '0 2px 12px rgba(0,0,0,0.08)' }}
         >
-          {/* Фон (без сетки — только для редактора) */}
-          <Layer listening={false}>
-            <Rect width={fp.width} height={fp.height}
-              fill={patternCanvas || customTextureImg ? undefined : bgColor}
-              fillPatternImage={customTextureImg ?? (patternCanvas as any)}
-              fillPatternRepeat="repeat"
-              fillPatternScaleX={patternScaleX}
-              fillPatternScaleY={patternScaleY}
-              fillPatternRotation={patternRotation} />
-          </Layer>
+          {/* Фон + декор + покрытия — снапшот (1 запрос) или полный рендер (fallback) */}
+          {snapshotImg ? (
+            <Layer listening={false}>
+              <KonvaImage image={snapshotImg} width={fp.width} height={fp.height} />
+            </Layer>
+          ) : (
+            <>
+              {/* Фон */}
+              <Layer listening={false}>
+                <Rect width={fp.width} height={fp.height}
+                  fill={patternCanvas || customTextureImg ? undefined : bgColor}
+                  fillPatternImage={customTextureImg ?? (patternCanvas as any)}
+                  fillPatternRepeat="repeat"
+                  fillPatternScaleX={patternScaleX}
+                  fillPatternScaleY={patternScaleY}
+                  fillPatternRotation={patternRotation} />
+              </Layer>
 
-          {/* Покрытие пола (слои) */}
-          <Layer listening={false}>
-            {floors.map((obj) => {
-              const img = floorImages[obj.textureUrl];
-              const scaleX = obj.patternScaleX ?? 1;
-              const scaleY = obj.patternScaleY ?? scaleX;
-              return (
-                <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
-                  {img ? (
-                    <Rect width={obj.width} height={obj.height}
-                      fillPatternImage={img}
-                      fillPatternRepeat="repeat"
-                      fillPatternScaleX={scaleX}
-                      fillPatternScaleY={scaleY}
-                      cornerRadius={4}
-                      stroke="rgba(0,0,0,0.1)"
-                      strokeWidth={1}
-                      opacity={0.9} />
-                  ) : (
-                    <Rect width={obj.width} height={obj.height}
-                      fill="#e5e7eb" cornerRadius={4}
-                      stroke="#d1d5db" strokeWidth={1}
-                      opacity={0.5} />
-                  )}
-                </Group>
-              );
-            })}
-          </Layer>
+              {/* Покрытие пола */}
+              <Layer listening={false}>
+                {floors.map((obj) => {
+                  const img = floorImages[obj.textureUrl];
+                  const scaleX = obj.patternScaleX ?? 1;
+                  const scaleY = obj.patternScaleY ?? scaleX;
+                  return (
+                    <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
+                      {img ? (
+                        <Rect width={obj.width} height={obj.height}
+                          fillPatternImage={img} fillPatternRepeat="repeat"
+                          fillPatternScaleX={scaleX} fillPatternScaleY={scaleY}
+                          cornerRadius={4} stroke="rgba(0,0,0,0.1)" strokeWidth={1} opacity={0.9} />
+                      ) : (
+                        <Rect width={obj.width} height={obj.height}
+                          fill="#e5e7eb" cornerRadius={4} stroke="#d1d5db" strokeWidth={1} opacity={0.5} />
+                      )}
+                    </Group>
+                  );
+                })}
+              </Layer>
 
-          {/* Декор */}
-          <Layer listening={false}>
-            {decors.map((obj) => {
-              const base = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af' };
-              const decorFill   = obj.customFill   ?? base.fill;
-              const decorStroke = obj.customStroke ?? base.stroke;
-              return (
-                <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
-                  {obj.type === 'column' ? (
-                    <Ellipse radiusX={obj.width / 2} radiusY={obj.height / 2} x={obj.width / 2} y={obj.height / 2}
-                      fill={decorFill} stroke={decorStroke} strokeWidth={2} opacity={0.8} />
-                  ) : (
-                    <Rect width={obj.width} height={obj.height}
-                      fill={decorFill} stroke={decorStroke} strokeWidth={1.5} cornerRadius={2} opacity={0.8} />
-                  )}
-                  {obj.label && obj.type !== 'wall' && obj.type !== 'window' && (
-                    <Text x={0} y={obj.height / 2 - 6} width={obj.width} align="center"
-                      text={obj.label} fontSize={11} fill="#6b7280" fontStyle="bold" />
-                  )}
-                </Group>
-              );
-            })}
-          </Layer>
+              {/* Декор */}
+              <Layer listening={false}>
+                {decors.map((obj) => {
+                  const base = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af' };
+                  const decorFill   = obj.customFill   ?? base.fill;
+                  const decorStroke = obj.customStroke ?? base.stroke;
+                  return (
+                    <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
+                      {obj.type === 'column' ? (
+                        <Ellipse radiusX={obj.width / 2} radiusY={obj.height / 2} x={obj.width / 2} y={obj.height / 2}
+                          fill={decorFill} stroke={decorStroke} strokeWidth={2} opacity={0.8} />
+                      ) : (
+                        <Rect width={obj.width} height={obj.height}
+                          fill={decorFill} stroke={decorStroke} strokeWidth={1.5} cornerRadius={2} opacity={0.8} />
+                      )}
+                      {obj.label && obj.type !== 'wall' && obj.type !== 'window' && (
+                        <Text x={0} y={obj.height / 2 - 6} width={obj.width} align="center"
+                          text={obj.label} fontSize={11} fill="#6b7280" fontStyle="bold" />
+                      )}
+                    </Group>
+                  );
+                })}
+              </Layer>
+            </>
+          )}
 
           {/* Столы */}
           <Layer>
