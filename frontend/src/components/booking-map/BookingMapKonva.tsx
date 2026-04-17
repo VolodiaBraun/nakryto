@@ -391,24 +391,24 @@ export default function BookingMapKonva({
                   if (obj.type === 'chair' && obj.iconUrl) {
                     const img = chairImages[obj.iconUrl];
                     return (
-                      <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation} opacity={0.92}>
+                      <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation} opacity={obj.opacity ?? 1}>
                         {img ? (
                           <KonvaImage image={img} width={obj.width} height={obj.height} />
                         ) : (
                           <Rect width={obj.width} height={obj.height}
-                            fill={decorFill} stroke={decorStroke} strokeWidth={1} cornerRadius={4} opacity={0.7} />
+                            fill={decorFill} stroke={decorStroke} strokeWidth={1} cornerRadius={4} />
                         )}
                       </Group>
                     );
                   }
                   return (
-                    <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
+                    <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation} opacity={obj.opacity ?? 1}>
                       {obj.type === 'column' ? (
                         <Ellipse radiusX={obj.width / 2} radiusY={obj.height / 2} x={obj.width / 2} y={obj.height / 2}
-                          fill={decorFill} stroke={decorStroke} strokeWidth={2} opacity={0.8} />
+                          fill={decorFill} stroke={decorStroke} strokeWidth={2} />
                       ) : (
                         <Rect width={obj.width} height={obj.height}
-                          fill={decorFill} stroke={decorStroke} strokeWidth={1.5} cornerRadius={2} opacity={0.8} />
+                          fill={decorFill} stroke={decorStroke} strokeWidth={1.5} cornerRadius={2} />
                       )}
                       {obj.label && obj.type !== 'wall' && obj.type !== 'window' && obj.type !== 'chair' && (
                         <Text x={0} y={obj.height / 2 - 6} width={obj.width} align="center"

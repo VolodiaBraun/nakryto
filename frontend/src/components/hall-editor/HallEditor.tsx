@@ -1023,6 +1023,31 @@ function DecorProperties({ decor, onUpdate, onRotate, onDelete }: {
         </div>
       </Field>
 
+      {/* Прозрачность — для всех элементов */}
+      <SectionDivider label="Прозрачность" />
+      <div className="space-y-1">
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-500">Непрозрачность</span>
+          <span className="text-xs font-medium text-gray-700 w-10 text-right">
+            {Math.round((decor.opacity ?? 1) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min={10}
+          max={100}
+          step={5}
+          value={Math.round((decor.opacity ?? 1) * 100)}
+          onChange={(e) => (onUpdate as any)({ opacity: Number(e.target.value) / 100 })}
+          className="w-full accent-blue-600"
+        />
+        <div className="flex justify-between text-[10px] text-gray-400">
+          <span>10%</span>
+          <span>50%</span>
+          <span>100%</span>
+        </div>
+      </div>
+
       {/* Цвет — только для не-стульев (PREMIUM) */}
       {!isChair && isPremium && (
         <>

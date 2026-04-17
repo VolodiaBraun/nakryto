@@ -152,6 +152,7 @@ export interface DecorativeObject {
   customFill?: string;
   customStroke?: string;
   iconUrl?: string;
+  opacity?: number;
 }
 
 export type TableShape = 'ROUND' | 'SQUARE' | 'RECTANGLE';

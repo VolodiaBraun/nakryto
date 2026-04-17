@@ -312,7 +312,7 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
       x={obj.x} y={obj.y}
       rotation={obj.rotation}
       draggable={draggable}
-      opacity={0.92}
+      opacity={obj.opacity ?? 1}
       onClick={(e) => { e.cancelBubble = true; onSelect(e.evt.shiftKey); }}
       onTap={(e) => { e.cancelBubble = true; onSelect(); }}
       onDragEnd={(e) => onDragEnd(snapToGrid(e.target.x()), snapToGrid(e.target.y()))}
