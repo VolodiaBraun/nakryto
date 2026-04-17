@@ -42,6 +42,7 @@ const DECOR_COLORS_LIGHT: Record<string, { fill: string; stroke: string }> = {
   stairs:   { fill: '#e0f2fe', stroke: '#38bdf8' },
   stage:    { fill: '#fce7f3', stroke: '#f472b6' },
   window:   { fill: '#bfdbfe', stroke: '#93c5fd' },
+  chair:    { fill: '#e7ddd0', stroke: '#a68b6e' },
 };
 
 const DECOR_COLORS_DARK: Record<string, { fill: string; stroke: string }> = {
@@ -53,6 +54,7 @@ const DECOR_COLORS_DARK: Record<string, { fill: string; stroke: string }> = {
   stairs:   { fill: '#0c4a6e', stroke: '#38bdf8' },
   stage:    { fill: '#500724', stroke: '#f472b6' },
   window:   { fill: '#1e3a5f', stroke: '#60a5fa' },
+  chair:    { fill: '#3d2e20', stroke: '#7a5c3e' },
 };
 
 // Склонение: 1 место / 2-4 места / 5+ мест
@@ -121,8 +123,9 @@ export default function BookingMapKonva({
   const [tagFilter, setTagFilter]     = useState<string | null>(null);
   const [hoveredId, setHoveredId]     = useState<string | null>(null);
   const [tooltip, setTooltip]         = useState<{ x: number; y: number; text: string } | null>(null);
-  const [iconImages, setIconImages]   = useState<Record<string, HTMLImageElement>>({});
+  const [iconImages, setIconImages]     = useState<Record<string, HTMLImageElement>>({});
   const [floorImages, setFloorImages]   = useState<Record<string, HTMLImageElement>>({});
+  const [chairImages, setChairImages]   = useState<Record<string, HTMLImageElement>>({});
   const [snapshotImg, setSnapshotImg]   = useState<HTMLImageElement | null>(null);
   const [containerW, setContainerW]   = useState(0);
   const [containerH, setContainerH]  = useState(0);
@@ -248,6 +251,22 @@ export default function BookingMapKonva({
     ).then((pairs) => setIconImages(Object.fromEntries(pairs))).catch(() => {});
   }, [tables]);
 
+  // Preload иконок стульев
+  useEffect(() => {
+    const chairs = (fp.objects?.filter((o: any) => o.type === 'chair') ?? []) as any[];
+    const urls = Array.from(new Set(chairs.flatMap((c) => c.iconUrl ? [c.iconUrl as string] : [])));
+    if (urls.length === 0) return;
+    Promise.all(
+      urls.map((url) => new Promise<[string, HTMLImageElement]>((res, rej) => {
+        const img = new Image();
+        img.onload = () => res([url, img]);
+        img.onerror = () => rej(url);
+        img.src = url;
+      }))
+    ).then((pairs) => setChairImages(Object.fromEntries(pairs))).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fp.objects]);
+
   // Теги, которые реально используются в этом зале
   const activeTags = useMemo(() => {
     const used = new Set<string>();
@@ -368,16 +387,30 @@ export default function BookingMapKonva({
                   const base = DECOR_COLORS[obj.type] || { fill: '#e5e7eb', stroke: '#9ca3af' };
                   const decorFill   = obj.customFill   ?? base.fill;
                   const decorStroke = obj.customStroke ?? base.stroke;
+                  // Стул с иконкой
+                  if (obj.type === 'chair' && obj.iconUrl) {
+                    const img = chairImages[obj.iconUrl];
+                    return (
+                      <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation} opacity={obj.opacity ?? 1}>
+                        {img ? (
+                          <KonvaImage image={img} width={obj.width} height={obj.height} />
+                        ) : (
+                          <Rect width={obj.width} height={obj.height}
+                            fill={decorFill} stroke={decorStroke} strokeWidth={1} cornerRadius={4} />
+                        )}
+                      </Group>
+                    );
+                  }
                   return (
-                    <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
+                    <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation} opacity={obj.opacity ?? 1}>
                       {obj.type === 'column' ? (
                         <Ellipse radiusX={obj.width / 2} radiusY={obj.height / 2} x={obj.width / 2} y={obj.height / 2}
-                          fill={decorFill} stroke={decorStroke} strokeWidth={2} opacity={0.8} />
+                          fill={decorFill} stroke={decorStroke} strokeWidth={2} />
                       ) : (
                         <Rect width={obj.width} height={obj.height}
-                          fill={decorFill} stroke={decorStroke} strokeWidth={1.5} cornerRadius={2} opacity={0.8} />
+                          fill={decorFill} stroke={decorStroke} strokeWidth={1.5} cornerRadius={2} />
                       )}
-                      {obj.label && obj.type !== 'wall' && obj.type !== 'window' && (
+                      {obj.label && obj.type !== 'wall' && obj.type !== 'window' && obj.type !== 'chair' && (
                         <Text x={0} y={obj.height / 2 - 6} width={obj.width} align="center"
                           text={obj.label} fontSize={11} fill="#6b7280" fontStyle="bold" />
                       )}

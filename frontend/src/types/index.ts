@@ -141,7 +141,7 @@ export interface TableObject {
 }
 
 export interface DecorativeObject {
-  type: 'wall' | 'column' | 'bar' | 'window';
+  type: 'wall' | 'column' | 'bar' | 'window' | 'chair';
   id: string;
   x: number;
   y: number;
@@ -151,6 +151,8 @@ export interface DecorativeObject {
   label?: string;
   customFill?: string;
   customStroke?: string;
+  iconUrl?: string;
+  opacity?: number;
 }
 
 export type TableShape = 'ROUND' | 'SQUARE' | 'RECTANGLE';
