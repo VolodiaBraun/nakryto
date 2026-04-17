@@ -26,6 +26,7 @@ const DECOR_COLORS: Record<string, { fill: string; stroke: string; text: string 
   toilet:   { fill: '#f3e8ff', stroke: '#c084fc', text: '#581c87' },
   stairs:   { fill: '#e0f2fe', stroke: '#38bdf8', text: '#0c4a6e' },
   stage:    { fill: '#fce7f3', stroke: '#f472b6', text: '#831843' },
+  chair:    { fill: '#e7ddd0', stroke: '#a68b6e', text: '#5c3d1e' },
 };
 
 // ─── Константы ────────────────────────────────────────────────────────────────
@@ -294,6 +295,16 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
     text:   base.text,
   };
 
+  // Загрузка иконки для стула
+  const [iconImg, setIconImg] = useState<HTMLImageElement | null>(null);
+  useEffect(() => {
+    if (obj.type !== 'chair' || !obj.iconUrl) { setIconImg(null); return; }
+    const img = new Image();
+    img.onload = () => setIconImg(img);
+    img.onerror = () => setIconImg(null);
+    img.src = obj.iconUrl;
+  }, [obj.type, obj.iconUrl]);
+
   return (
     <Group
       ref={groupRef}
@@ -301,7 +312,7 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
       x={obj.x} y={obj.y}
       rotation={obj.rotation}
       draggable={draggable}
-      opacity={0.85}
+      opacity={0.92}
       onClick={(e) => { e.cancelBubble = true; onSelect(e.evt.shiftKey); }}
       onTap={(e) => { e.cancelBubble = true; onSelect(); }}
       onDragEnd={(e) => onDragEnd(snapToGrid(e.target.x()), snapToGrid(e.target.y()))}
@@ -312,7 +323,24 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
         onTransformEnd(snapToGrid(node.x()), snapToGrid(node.y()), Math.max(10, Math.round(obj.width * sx)), Math.max(10, Math.round(obj.height * sy)), node.rotation());
       }}
     >
-      {obj.type === 'column' ? (
+      {/* Стул с иконкой */}
+      {obj.type === 'chair' && iconImg ? (
+        <>
+          <KonvaImage image={iconImg} width={obj.width} height={obj.height} />
+          {isSelected && (
+            <Rect width={obj.width} height={obj.height}
+              fill="transparent"
+              stroke="#3b82f6" strokeWidth={2}
+              cornerRadius={4} />
+          )}
+        </>
+      ) : obj.type === 'chair' ? (
+        /* Стул без иконки — заглушка */
+        <Rect width={obj.width} height={obj.height}
+          fill={colors.fill} stroke={isSelected ? '#3b82f6' : colors.stroke}
+          strokeWidth={isSelected ? 2 : 1.5} cornerRadius={4}
+          dash={[4, 3]} />
+      ) : obj.type === 'column' ? (
         <Ellipse radiusX={obj.width / 2} radiusY={obj.height / 2} x={obj.width / 2} y={obj.height / 2}
           fill={colors.fill} stroke={isSelected ? '#3b82f6' : colors.stroke} strokeWidth={isSelected ? 2 : 2} />
       ) : (
@@ -320,7 +348,8 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
           fill={colors.fill} stroke={isSelected ? '#3b82f6' : colors.stroke}
           strokeWidth={isSelected ? 2 : 1.5} cornerRadius={obj.type === 'bar' ? 4 : 2} />
       )}
-      {obj.label && (
+      {/* Метка только для не-стульев */}
+      {obj.label && obj.type !== 'chair' && (
         <Text x={0} y={obj.height / 2 - 6} width={obj.width} align="center"
           text={obj.label} fontSize={Math.min(12, obj.width / 6)} fill={colors.text} fontStyle="bold" />
       )}

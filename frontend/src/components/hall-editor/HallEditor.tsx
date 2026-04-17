@@ -6,6 +6,7 @@ import Link from 'next/link';
 import type { Hall, FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
 import { TABLE_ICONS } from '@/lib/tableIcons';
+import { CHAIR_ICONS } from '@/lib/chairIcons';
 import { PATTERN_OPTIONS } from '@/lib/floorPatterns';
 import { compressImage, IMAGE_LIMITS } from '@/lib/imageCompress';
 import { v4 as uuidv4 } from 'uuid';
@@ -52,7 +53,8 @@ export type Tool =
   | 'entrance'
   | 'toilet'
   | 'stairs'
-  | 'stage';
+  | 'stage'
+  | 'chair';
 
 interface ToolItem {
   id: Tool;
@@ -75,6 +77,7 @@ const TOOLS: ToolItem[] = [
   { id: 'toilet',           label: 'Туалет',          icon: '🚻', group: 'decor' },
   { id: 'stairs',           label: 'Лестница',        icon: '🪜', group: 'decor' },
   { id: 'stage',            label: 'Сцена',           icon: '🎭', group: 'decor' },
+  { id: 'chair',            label: 'Стул / Диван',    icon: '🪑', group: 'decor' },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -97,6 +100,7 @@ const DEFAULT_SIZES: Record<string, { width: number; height: number }> = {
   toilet:            { width: 120, height: 100 },
   stairs:            { width: 120, height: 80  },
   stage:             { width: 300, height: 120 },
+  chair:             { width: 40,  height: 40  },
 };
 
 const DECOR_LABELS: Record<string, string> = {
@@ -108,6 +112,7 @@ const DECOR_LABELS: Record<string, string> = {
   toilet:   'Туалет',
   stairs:   'Лестница',
   stage:    'Сцена',
+  chair:    'Стул',
 };
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -194,7 +199,9 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
         x: Math.round(x - size.width / 2),
         y: Math.round(y - size.height / 2),
         width: size.width, height: size.height, rotation: 0,
-        label: DECOR_LABELS[activeTool] || activeTool,
+        label: activeTool === 'chair' ? '' : (DECOR_LABELS[activeTool] || activeTool),
+        // Для стула — первая встроенная иконка по умолчанию
+        ...(activeTool === 'chair' ? { iconUrl: CHAIR_ICONS[0].dataUrl } : {}),
       };
       setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, newDecor] }; });
     }
@@ -882,6 +889,34 @@ function DecorProperties({ decor, onUpdate, onRotate, onDelete }: {
   const isPremium = restaurant?.plan === 'PREMIUM';
   const wM = pxToM(decor.width);
   const hM = pxToM(decor.height);
+  const isChair = decor.type === 'chair';
+
+  const [iconUploading, setIconUploading] = useState(false);
+  const [iconError, setIconError] = useState('');
+
+  const handleChairIconUpload = async (file: File) => {
+    setIconError('');
+    setIconUploading(true);
+    try {
+      const { maxSizeBytes, maxWidth, maxHeight } = IMAGE_LIMITS.ICON;
+      const compressed = await compressImage(file, maxSizeBytes, maxWidth, maxHeight);
+      const token = localStorage.getItem('accessToken') ?? '';
+      const res = await fetch(`/api/uploads/icons/presign?contentType=image%2Fwebp`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message ?? 'Ошибка'); }
+      const json = await res.json();
+      const { uploadUrl, publicUrl } = json.data ?? json;
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: compressed, headers: { 'Content-Type': 'image/webp' } });
+      if (!s3Res.ok) throw new Error(`Ошибка загрузки: ${s3Res.status}`);
+      (onUpdate as any)({ iconUrl: publicUrl });
+    } catch (e: any) {
+      setIconError(e.message ?? 'Ошибка загрузки');
+    } finally {
+      setIconUploading(false);
+    }
+  };
 
   return (
     <div className="p-4 space-y-4">
@@ -890,33 +925,95 @@ function DecorProperties({ decor, onUpdate, onRotate, onDelete }: {
         <button onClick={onDelete} className="text-red-400 hover:text-red-600 text-xs flex items-center gap-1">🗑 Удалить</button>
       </div>
 
-      <SectionDivider label="Размер (1 м = 100 пикселей)" />
+      {/* Иконка стула */}
+      {isChair && (
+        <>
+          <SectionDivider label="Иконка стула" />
+          <div className="grid grid-cols-3 gap-1.5 mb-1">
+            {CHAIR_ICONS.map((icon) => (
+              <button
+                key={icon.id}
+                onClick={() => (onUpdate as any)({ iconUrl: icon.dataUrl })}
+                title={icon.label}
+                className={`flex flex-col items-center gap-0.5 p-1 rounded-lg border transition-all ${
+                  decor.iconUrl === icon.dataUrl
+                    ? 'border-blue-500 ring-1 ring-blue-400 bg-blue-50'
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={icon.dataUrl} alt={icon.label} className="w-8 h-8 object-contain" />
+                <span className="text-[9px] text-gray-500 leading-none text-center truncate w-full">{icon.label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Загрузка своей иконки — PREMIUM */}
+          {isPremium ? (
+            <>
+              <label className={`relative flex items-center justify-center gap-1.5 w-full py-1.5 border border-dashed rounded-lg text-xs cursor-pointer transition-all ${
+                iconUploading ? 'border-blue-300 text-blue-400 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
+              }`}>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/svg+xml"
+                  className="hidden"
+                  disabled={iconUploading}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleChairIconUpload(f); e.target.value = ''; }}
+                />
+                {iconUploading ? '⏳ Загрузка...' : '📤 Своя иконка (до 2 МБ)'}
+              </label>
+
+              {/* Превью кастомной иконки */}
+              {decor.iconUrl && !CHAIR_ICONS.some((i) => i.dataUrl === decor.iconUrl) && (
+                <div className="flex items-center gap-2 p-1.5 bg-gray-50 rounded-lg border border-gray-200">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={decor.iconUrl} alt="Иконка" className="w-10 h-10 rounded object-cover border border-gray-200" />
+                  <span className="text-[10px] text-gray-500 flex-1">Своя иконка</span>
+                  <button onClick={() => (onUpdate as any)({ iconUrl: CHAIR_ICONS[0].dataUrl })} className="text-xs text-red-400 hover:text-red-600" title="Сброс">✕</button>
+                </div>
+              )}
+              {iconError && <p className="text-[10px] text-red-500 mt-1">{iconError}</p>}
+            </>
+          ) : (
+            <div className="rounded-lg border border-purple-200 bg-purple-50 p-2 text-center">
+              <p className="text-[10px] text-purple-700">Своя иконка — тариф Premium</p>
+            </div>
+          )}
+        </>
+      )}
+
+      <SectionDivider label={isChair ? 'Размер (см)' : 'Размер (1 м = 100 пикселей)'} />
 
       <div className="grid grid-cols-2 gap-2">
-        <Field label="Ширина (м)">
+        <Field label={isChair ? 'Ширина (см)' : 'Ширина (м)'}>
           <input
             type="number"
-            step="0.1"
-            value={Number(wM)}
-            onChange={(e) => onUpdate({ width: mToPx(Number(e.target.value)) })}
+            step={isChair ? 1 : 0.1}
+            value={isChair ? decor.width : Number(wM)}
+            onChange={(e) => onUpdate({ width: isChair ? Number(e.target.value) : mToPx(Number(e.target.value)) })}
             className="input"
-            min={0.1}
-            max={20}
+            min={isChair ? 10 : 0.1}
+            max={isChair ? 300 : 20}
           />
         </Field>
-        <Field label="Высота (м)">
+        <Field label={isChair ? 'Высота (см)' : 'Высота (м)'}>
           <input
             type="number"
-            step="0.1"
-            value={Number(hM)}
-            onChange={(e) => onUpdate({ height: mToPx(Number(e.target.value)) })}
+            step={isChair ? 1 : 0.1}
+            value={isChair ? decor.height : Number(hM)}
+            onChange={(e) => onUpdate({ height: isChair ? Number(e.target.value) : mToPx(Number(e.target.value)) })}
             className="input"
-            min={0.1}
-            max={20}
+            min={isChair ? 10 : 0.1}
+            max={isChair ? 300 : 20}
           />
         </Field>
       </div>
-      <p className="text-xs text-gray-400">{decor.width} × {decor.height} px ({wM} × {hM} м)</p>
+      <p className="text-xs text-gray-400">
+        {isChair
+          ? `${decor.width} × ${decor.height} см`
+          : `${decor.width} × ${decor.height} px (${wM} × ${hM} м)`}
+      </p>
 
       <Field label="Поворот">
         <div className="flex items-center gap-2">
@@ -926,7 +1023,8 @@ function DecorProperties({ decor, onUpdate, onRotate, onDelete }: {
         </div>
       </Field>
 
-      {isPremium && (
+      {/* Цвет — только для не-стульев (PREMIUM) */}
+      {!isChair && isPremium && (
         <>
           <SectionDivider label="Цвет элемента" />
           <div className="flex items-center justify-between">
