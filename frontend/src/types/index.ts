@@ -104,7 +104,20 @@ export interface FloorPlan {
   theme?: FloorTheme;
 }
 
-export type FloorPlanObject = TableObject | DecorativeObject;
+export interface FloorObject {
+  type: 'floor';
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  textureUrl: string;
+  patternScaleX?: number;
+  patternScaleY?: number;
+}
+
+export type FloorPlanObject = TableObject | DecorativeObject | FloorObject;
 
 export interface TableObject {
   type: 'table';

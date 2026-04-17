@@ -2,7 +2,7 @@
 
 import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { Stage, Layer, Rect, Ellipse, Text, Group, Transformer, Line, Image as KonvaImage } from 'react-konva';
-import type { FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject } from '@/types';
+import type { FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
 import { createPatternCanvas } from '@/lib/floorPatterns';
 import type { Tool } from './HallEditor';
@@ -110,6 +110,71 @@ function ZoomControls({ scale, onZoomIn, onZoomOut, onReset }: {
       <button className={btn} onClick={onReset} title="По размеру" style={{ fontSize: 10 }}>{Math.round(scale * 100)}%</button>
       <button className={btn} onClick={onZoomOut} title="Уменьшить">−</button>
     </div>
+  );
+}
+
+// ─── Покрытие пола ────────────────────────────────────────────────────────────
+
+function FloorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable }: {
+  obj: FloorObject;
+  isSelected: boolean;
+  onSelect: (shiftKey?: boolean) => void;
+  onDragEnd: (x: number, y: number) => void;
+  onTransformEnd: (x: number, y: number, w: number, h: number, r: number) => void;
+  draggable: boolean;
+}) {
+  const groupRef = useRef<Konva.Group>(null);
+  const [texImg, setTexImg] = useState<HTMLImageElement | null>(null);
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setTexImg(img);
+    img.onerror = () => setTexImg(null);
+    img.src = obj.textureUrl;
+  }, [obj.textureUrl]);
+
+  const scaleX = obj.patternScaleX ?? 1;
+  const scaleY = obj.patternScaleY ?? scaleX;
+
+  return (
+    <Group
+      ref={groupRef}
+      id={obj.id}
+      x={obj.x} y={obj.y}
+      rotation={obj.rotation}
+      draggable={draggable}
+      onClick={(e) => { e.cancelBubble = true; onSelect(e.evt.shiftKey); }}
+      onTap={(e) => { e.cancelBubble = true; onSelect(); }}
+      onDragEnd={(e) => onDragEnd(snapToGrid(e.target.x()), snapToGrid(e.target.y()))}
+      onTransformEnd={() => {
+        const node = groupRef.current!;
+        const sx = node.scaleX(), sy = node.scaleY();
+        node.scaleX(1); node.scaleY(1);
+        onTransformEnd(snapToGrid(node.x()), snapToGrid(node.y()), Math.max(40, Math.round(obj.width * sx)), Math.max(40, Math.round(obj.height * sy)), node.rotation());
+      }}
+    >
+      {texImg ? (
+        <Rect width={obj.width} height={obj.height}
+          fillPatternImage={texImg}
+          fillPatternRepeat="repeat"
+          fillPatternScaleX={scaleX}
+          fillPatternScaleY={scaleY}
+          cornerRadius={4}
+          stroke={isSelected ? '#3b82f6' : 'rgba(0,0,0,0.15)'}
+          strokeWidth={isSelected ? 2 : 1}
+          opacity={0.9} />
+      ) : (
+        // placeholder пока текстура грузится
+        <Rect width={obj.width} height={obj.height}
+          fill="#e5e7eb" cornerRadius={4}
+          stroke={isSelected ? '#3b82f6' : '#d1d5db'} strokeWidth={isSelected ? 2 : 1}
+          dash={[6, 4]} opacity={0.7} />
+      )}
+      {isSelected && (
+        <Text x={0} y={obj.height / 2 - 8} width={obj.width} align="center"
+          text="Покрытие" fontSize={11} fill={isSelected ? '#3b82f6' : '#6b7280'} fontStyle="bold" />
+      )}
+    </Group>
   );
 }
 
@@ -467,8 +532,9 @@ export default function KonvaCanvas({
     }
   }, [isSelectMode, isBoxSelectMode, onDeselectAll, onCanvasClick]);
 
+  const floors = floorPlan.objects.filter((o) => o.type === 'floor') as FloorObject[];
   const tables = floorPlan.objects.filter((o) => o.type === 'table') as TableObject[];
-  const decors = floorPlan.objects.filter((o) => o.type !== 'table') as DecorativeObject[];
+  const decors = floorPlan.objects.filter((o) => o.type !== 'table' && o.type !== 'floor') as DecorativeObject[];
 
   // Паттерн пола — canvas-текстура для Konva fillPatternImage
   const patternCanvas = useMemo(() => {
@@ -547,6 +613,21 @@ export default function KonvaCanvas({
             fillPatternRotation={patternRotation}
             shadowColor="rgba(0,0,0,0.12)" shadowBlur={12} shadowOffsetX={2} shadowOffsetY={2} />
           {buildGrid(floorPlan.width, floorPlan.height)}
+        </Layer>
+
+        {/* Покрытие пола (слои) */}
+        <Layer>
+          {floors.map((obj) => (
+            <FloorShape
+              key={obj.id}
+              obj={obj}
+              isSelected={selectedIdsSet.has(obj.id)}
+              onSelect={(shiftKey) => isSelectMode && onSelect(obj.id, shiftKey)}
+              onDragEnd={(x, y) => onObjectMove(obj.id, x, y)}
+              onTransformEnd={(x, y, w, h, r) => onObjectTransform(obj.id, x, y, w, h, r)}
+              draggable={isSelectMode}
+            />
+          ))}
         </Layer>
 
         {/* Декор */}

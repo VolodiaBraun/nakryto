@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import type { Hall, FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject } from '@/types';
+import type { Hall, FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
 import { TABLE_ICONS } from '@/lib/tableIcons';
 import { PATTERN_OPTIONS } from '@/lib/floorPatterns';
@@ -153,7 +153,8 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
   const selectedId = selectedIds[0] ?? null;
   const selectedObject = selectedId ? (floorPlan.objects.find((o) => o.id === selectedId) || null) : null;
   const selectedTable = selectedObject?.type === 'table' ? (selectedObject as TableObject) : null;
-  const selectedDecor = selectedObject && selectedObject.type !== 'table' ? (selectedObject as DecorativeObject) : null;
+  const selectedFloor = selectedObject?.type === 'floor' ? (selectedObject as FloorObject) : null;
+  const selectedDecor = selectedObject && selectedObject.type !== 'table' && selectedObject.type !== 'floor' ? (selectedObject as DecorativeObject) : null;
 
   // ─── Select ────────────────────────────────────────────────────────────────
 
@@ -237,6 +238,24 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
     });
   }, []);
 
+  // ─── Добавить покрытие пола (PREMIUM) ────────────────────────────────────────
+
+  const handleAddFloor = useCallback((textureUrl: string) => {
+    const id = uuidv4();
+    const fp = floorPlanRef.current;
+    const newFloor: FloorObject = {
+      type: 'floor', id,
+      x: Math.max(0, Math.round(fp.width / 2 - 100)),
+      y: Math.max(0, Math.round(fp.height / 2 - 100)),
+      width: 200, height: 200,
+      rotation: 0,
+      textureUrl,
+      patternScaleX: 1, patternScaleY: 1,
+    };
+    setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, newFloor] }; });
+    setSelectedIds([id]);
+  }, []);
+
   const updateSelected = (updates: Partial<FloorPlanObject>) => {
     if (!selectedId) return;
     setFloorPlan((prev) => {
@@ -283,7 +302,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
       if (obj.type === 'table') {
         return { ...obj, id: newId, x: obj.x + OFFSET, y: obj.y + OFFSET, label: String(tableCounter.current++) } as TableObject;
       }
-      return { ...obj, id: newId, x: obj.x + OFFSET, y: obj.y + OFFSET } as DecorativeObject;
+      return { ...obj, id: newId, x: obj.x + OFFSET, y: obj.y + OFFSET } as FloorPlanObject;
     });
     setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, ...newObjects] }; });
     setSelectedIds(newObjects.map((o) => o.id));
@@ -490,6 +509,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
         <PropertiesPanel
           selectedTable={selectedTable}
           selectedDecor={selectedDecor}
+          selectedFloor={selectedFloor}
           selectedCount={selectedIds.length}
           onUpdate={updateSelected}
           onRotate={rotateSelected}
@@ -497,6 +517,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
           onCopy={handleCopy}
           floorPlan={floorPlan}
           onFloorPlanChange={setFloorPlan}
+          onAddFloor={handleAddFloor}
         />
       </div>
     </div>
@@ -508,6 +529,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
 interface PropertiesPanelProps {
   selectedTable: TableObject | null;
   selectedDecor: DecorativeObject | null;
+  selectedFloor: FloorObject | null;
   selectedCount: number;
   onUpdate: (u: Partial<FloorPlanObject>) => void;
   onRotate: (d: number) => void;
@@ -515,10 +537,11 @@ interface PropertiesPanelProps {
   onCopy: () => void;
   floorPlan: FloorPlan;
   onFloorPlanChange: (fp: FloorPlan) => void;
+  onAddFloor: (textureUrl: string) => void;
 }
 
 function PropertiesPanel(props: PropertiesPanelProps) {
-  const { selectedTable, selectedDecor, selectedCount, onUpdate, onRotate, onDelete, onCopy, floorPlan, onFloorPlanChange } = props;
+  const { selectedTable, selectedDecor, selectedFloor, selectedCount, onUpdate, onRotate, onDelete, onCopy, floorPlan, onFloorPlanChange, onAddFloor } = props;
 
   if (selectedCount > 1) {
     return (
@@ -532,10 +555,12 @@ function PropertiesPanel(props: PropertiesPanelProps) {
     <div className="w-60 bg-white border-l border-gray-200 flex flex-col overflow-y-auto flex-shrink-0">
       {selectedTable ? (
         <TableProperties table={selectedTable} onUpdate={onUpdate} onRotate={onRotate} onDelete={onDelete} />
+      ) : selectedFloor ? (
+        <FloorProperties floor={selectedFloor} onUpdate={onUpdate} onRotate={onRotate} onDelete={onDelete} />
       ) : selectedDecor ? (
         <DecorProperties decor={selectedDecor} onUpdate={onUpdate} onRotate={onRotate} onDelete={onDelete} />
       ) : (
-        <CanvasProperties floorPlan={floorPlan} onChange={onFloorPlanChange} />
+        <CanvasProperties floorPlan={floorPlan} onChange={onFloorPlanChange} onAddFloor={onAddFloor} />
       )}
     </div>
   );
@@ -887,15 +912,106 @@ function DecorProperties({ decor, onUpdate, onRotate, onDelete }: {
   );
 }
 
+// ─── Свойства покрытия пола ───────────────────────────────────────────────────
+
+function FloorProperties({ floor, onUpdate, onRotate, onDelete }: {
+  floor: FloorObject;
+  onUpdate: (u: Partial<FloorPlanObject>) => void;
+  onRotate: (d: number) => void;
+  onDelete: () => void;
+}) {
+  const wM = pxToM(floor.width);
+  const hM = pxToM(floor.height);
+
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium text-gray-900 text-sm">Покрытие пола</h3>
+        <button onClick={onDelete} className="text-red-400 hover:text-red-600 text-xs flex items-center gap-1">🗑 Удалить</button>
+      </div>
+
+      {/* Превью текстуры */}
+      <div className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg border border-gray-200">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={floor.textureUrl} alt="Текстура" className="w-12 h-12 rounded object-cover border border-gray-200 flex-shrink-0" />
+        <span className="text-[10px] text-gray-500 flex-1 truncate leading-snug">Тащите углы для<br/>изменения размера</span>
+      </div>
+
+      <SectionDivider label="Размер (метры)" />
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Ширина (м)">
+          <input
+            type="number" step="0.1"
+            value={Number(wM)}
+            onChange={(e) => (onUpdate as any)({ width: mToPx(Number(e.target.value)) })}
+            className="input" min={0.5} max={20}
+          />
+        </Field>
+        <Field label="Высота (м)">
+          <input
+            type="number" step="0.1"
+            value={Number(hM)}
+            onChange={(e) => (onUpdate as any)({ height: mToPx(Number(e.target.value)) })}
+            className="input" min={0.5} max={20}
+          />
+        </Field>
+      </div>
+      <p className="text-xs text-gray-400">{floor.width} × {floor.height} px ({wM} × {hM} м)</p>
+
+      <Field label="Поворот">
+        <div className="flex items-center gap-2">
+          <button onClick={() => onRotate(-90)} className="flex-1 btn-secondary text-xs py-1.5">−90°</button>
+          <span className="text-xs text-gray-500 w-10 text-center">{floor.rotation}°</span>
+          <button onClick={() => onRotate(90)} className="flex-1 btn-secondary text-xs py-1.5">+90°</button>
+        </div>
+      </Field>
+
+      <SectionDivider label="Масштаб текстуры" />
+      <div className="grid grid-cols-2 gap-1.5">
+        <div>
+          <label className="block text-[10px] text-gray-400 mb-0.5">Ширина ×</label>
+          <input
+            type="number" min={0.2} max={10} step={0.1}
+            value={Number((floor.patternScaleX ?? 1).toFixed(1))}
+            onChange={(e) => (onUpdate as any)({ patternScaleX: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
+            className="input text-xs py-1 w-full"
+          />
+        </div>
+        <div>
+          <label className="block text-[10px] text-gray-400 mb-0.5">Высота ×</label>
+          <input
+            type="number" min={0.2} max={10} step={0.1}
+            value={Number((floor.patternScaleY ?? floor.patternScaleX ?? 1).toFixed(1))}
+            onChange={(e) => (onUpdate as any)({ patternScaleY: Math.max(0.2, Math.min(10, Number(e.target.value))) })}
+            className="input text-xs py-1 w-full"
+          />
+        </div>
+      </div>
+      <button
+        onClick={() => (onUpdate as any)({ patternScaleX: 1, patternScaleY: 1 })}
+        className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors"
+      >
+        сбросить (1×1)
+      </button>
+    </div>
+  );
+}
+
 // ─── Свойства холста / зала ───────────────────────────────────────────────────
 
-function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onChange: (fp: FloorPlan) => void }) {
+function CanvasProperties({ floorPlan, onChange, onAddFloor }: {
+  floorPlan: FloorPlan;
+  onChange: (fp: FloorPlan) => void;
+  onAddFloor: (textureUrl: string) => void;
+}) {
   const { restaurant } = useAuth();
   const isPremium = restaurant?.plan === 'PREMIUM';
   const wM = Number(pxToM(floorPlan.width));
   const hM = Number(pxToM(floorPlan.height));
   const [textureUploading, setTextureUploading] = useState(false);
   const [textureError, setTextureError] = useState('');
+  const [floorUploading, setFloorUploading] = useState(false);
+  const [floorError, setFloorError] = useState('');
 
   const updateTheme = (updates: Partial<FloorTheme>) => {
     onChange({ ...floorPlan, theme: { ...floorPlan.theme, ...updates } });
@@ -929,6 +1045,28 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
       setTextureError(e.message ?? 'Ошибка загрузки');
     } finally {
       setTextureUploading(false);
+    }
+  };
+
+  const handleFloorUpload = async (file: File) => {
+    setFloorError('');
+    setFloorUploading(true);
+    try {
+      const token = localStorage.getItem('accessToken') ?? '';
+      const res = await fetch(`/api/uploads/textures/presign?contentType=${encodeURIComponent(file.type)}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message ?? e.message ?? 'Ошибка'); }
+      const json = await res.json();
+      const { uploadUrl, publicUrl } = json.data ?? json;
+      const s3Res = await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } });
+      if (!s3Res.ok) throw new Error(`Ошибка загрузки: ${s3Res.status}`);
+      onAddFloor(publicUrl);
+    } catch (e: any) {
+      setFloorError(e.message ?? 'Ошибка загрузки');
+    } finally {
+      setFloorUploading(false);
     }
   };
 
@@ -1156,6 +1294,30 @@ function CanvasProperties({ floorPlan, onChange }: { floorPlan: FloorPlan; onCha
               Сбросить оформление
             </button>
           )}
+
+          <SectionDivider label="Покрытие пола" />
+
+          <div>
+            <p className="text-xs text-gray-500 mb-1 leading-snug">
+              Добавьте область с текстурой (плитка, паркет, ковёр). Можно несколько зон — они слоем под столами.
+            </p>
+            <label className={`relative flex items-center justify-center gap-1.5 w-full py-2 border border-dashed rounded-lg text-xs cursor-pointer transition-all ${
+              floorUploading ? 'border-blue-300 text-blue-400 bg-blue-50' : 'border-gray-300 text-gray-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
+            }`}>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                disabled={floorUploading}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFloorUpload(f); e.target.value = ''; }}
+              />
+              {floorUploading ? '⏳ Загрузка...' : '🪵 Добавить покрытие пола'}
+            </label>
+            {floorError && <p className="text-[10px] text-red-500 mt-1">{floorError}</p>}
+            <p className="text-[10px] text-gray-400 mt-1">
+              После загрузки покрытие появится в центре зала. Перетащите и растяните.
+            </p>
+          </div>
         </div>
       )}
 

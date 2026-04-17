@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { Stage, Layer, Rect, Ellipse, Text, Group, Image as KonvaImage } from 'react-konva';
 import { createPatternCanvas } from '@/lib/floorPatterns';
-import type { Hall, FloorPlan, TableObject, DecorativeObject } from '@/types';
+import type { Hall, FloorPlan, TableObject, DecorativeObject, FloorObject } from '@/types';
 import Konva from 'konva';
 import { TABLE_TAGS } from '@/lib/tableTags';
 
@@ -122,6 +122,7 @@ export default function BookingMapKonva({
   const [hoveredId, setHoveredId]     = useState<string | null>(null);
   const [tooltip, setTooltip]         = useState<{ x: number; y: number; text: string } | null>(null);
   const [iconImages, setIconImages]   = useState<Record<string, HTMLImageElement>>({});
+  const [floorImages, setFloorImages] = useState<Record<string, HTMLImageElement>>({});
   const [containerW, setContainerW]   = useState(0);
   const [containerH, setContainerH]  = useState(0);
   const [scale, setScale]             = useState(1);
@@ -180,8 +181,9 @@ export default function BookingMapKonva({
     setStagePos({ x: (containerW - fp.width * initScale) / 2, y: 0 });
   }, [containerW, fp.width]);
 
+  const floors = (fp.objects?.filter((o: any) => o.type === 'floor') ?? []) as FloorObject[];
   const tables = (fp.objects?.filter((o: any) => o.type === 'table') ?? []) as TableObject[];
-  const decors = (fp.objects?.filter((o: any) => o.type !== 'table') ?? []) as DecorativeObject[];
+  const decors = (fp.objects?.filter((o: any) => o.type !== 'table' && o.type !== 'floor') ?? []) as DecorativeObject[];
 
   // Паттерн пола
   const patternCanvas = useMemo(() => {
@@ -205,6 +207,21 @@ export default function BookingMapKonva({
   const patternScaleX   = fp.theme?.patternScaleX ?? 1;
   const patternScaleY   = fp.theme?.patternScaleY ?? patternScaleX;
   const patternRotation = fp.theme?.patternRotation ?? 0;
+
+  // Preload текстур покрытий пола
+  useEffect(() => {
+    const urls = Array.from(new Set(floors.map((f) => f.textureUrl)));
+    if (urls.length === 0) return;
+    Promise.all(
+      urls.map((url) => new Promise<[string, HTMLImageElement]>((res, rej) => {
+        const img = new Image();
+        img.onload = () => res([url, img]);
+        img.onerror = () => rej(url);
+        img.src = url;
+      }))
+    ).then((pairs) => setFloorImages(Object.fromEntries(pairs))).catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fp.objects]);
 
   // Preload иконок столов
   useEffect(() => {
@@ -303,6 +320,35 @@ export default function BookingMapKonva({
               fillPatternScaleX={patternScaleX}
               fillPatternScaleY={patternScaleY}
               fillPatternRotation={patternRotation} />
+          </Layer>
+
+          {/* Покрытие пола (слои) */}
+          <Layer listening={false}>
+            {floors.map((obj) => {
+              const img = floorImages[obj.textureUrl];
+              const scaleX = obj.patternScaleX ?? 1;
+              const scaleY = obj.patternScaleY ?? scaleX;
+              return (
+                <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
+                  {img ? (
+                    <Rect width={obj.width} height={obj.height}
+                      fillPatternImage={img}
+                      fillPatternRepeat="repeat"
+                      fillPatternScaleX={scaleX}
+                      fillPatternScaleY={scaleY}
+                      cornerRadius={4}
+                      stroke="rgba(0,0,0,0.1)"
+                      strokeWidth={1}
+                      opacity={0.9} />
+                  ) : (
+                    <Rect width={obj.width} height={obj.height}
+                      fill="#e5e7eb" cornerRadius={4}
+                      stroke="#d1d5db" strokeWidth={1}
+                      opacity={0.5} />
+                  )}
+                </Group>
+              );
+            })}
           </Layer>
 
           {/* Декор */}
