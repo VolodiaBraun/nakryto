@@ -15,6 +15,11 @@ export interface WallElement {
   height: number;
 }
 
+export interface LightSettings {
+  ambientIntensity: number;
+  mainIntensity: number;
+}
+
 export interface Hall3DPlan {
   polygon: Vec2[];
   wallHeight: number;
@@ -22,6 +27,8 @@ export interface Hall3DPlan {
   floorColor: string;
   wallColor: string;
   wallElements: WallElement[];
+  lightSettings: LightSettings;
+  tablePositions: Record<string, { x: number; z: number }>; // overrides per table.id
 }
 
 export const DEFAULT_PLAN: Hall3DPlan = {
@@ -31,6 +38,8 @@ export const DEFAULT_PLAN: Hall3DPlan = {
   floorColor: '#c8a97e',
   wallColor: '#f0ebe0',
   wallElements: [],
+  lightSettings: { ambientIntensity: 0.55, mainIntensity: 1.1 },
+  tablePositions: {},
 };
 
 export const WALL_ELEMENT_META: Record<WallElementType, { label: string; icon: string; color: string; defaultW: number; defaultH: number }> = {
