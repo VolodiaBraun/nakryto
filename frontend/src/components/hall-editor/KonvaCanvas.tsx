@@ -1,8 +1,8 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useState, useMemo } from 'react';
+import React, { useRef, useEffect, useCallback, useState, useMemo } from 'react';
 import { Stage, Layer, Rect, Ellipse, Text, Group, Transformer, Line, Image as KonvaImage } from 'react-konva';
-import type { FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject } from '@/types';
+import type { FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject, TextLabelObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
 import { createPatternCanvas } from '@/lib/floorPatterns';
 import type { Tool } from './HallEditor';
@@ -252,30 +252,74 @@ function TableShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
           : <Rect width={obj.width} height={obj.height} cornerRadius={6} fill="transparent" stroke={colors.selectedStroke} strokeWidth={2.5} />
       )}
 
-      {/* Номер стола */}
-      <Text x={0} y={cy - 14} width={obj.width} align="center"
-        text={obj.label}
-        fontSize={Math.min(16, obj.width / 4)} fontStyle="bold"
-        fill={colors.text}
-        shadowColor={iconImg ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={iconImg ? 2 : 0} />
-
-      {/* Вместимость */}
-      <Text x={0} y={cy + 5} width={obj.width} align="center"
-        text={seatsLabel(obj.minGuests, obj.maxGuests)}
-        fontSize={Math.min(9, obj.width / 9)}
-        fill={colors.text}
-        opacity={0.8}
-        shadowColor={iconImg ? 'rgba(0,0,0,0.4)' : undefined} shadowBlur={iconImg ? 2 : 0} />
-
-      {/* Теги */}
-      {obj.tags && obj.tags.length > 0 && (
-        <Text x={0} y={cy + 18} width={obj.width} align="center"
-          text={obj.tags.slice(0, 4).map((id) => TABLE_TAGS.find((t) => t.id === id)?.icon ?? '').join(' ')}
-          fontSize={Math.min(12, obj.width / 7)} />
-      )}
     </Group>
   );
 }
+
+// ─── Горизонтальные метки столов (отдельный слой, вне повёрнутой Group) ──────
+
+const TableLabelsLayer = React.forwardRef<Konva.Layer, {
+  tables: TableObject[];
+  selectedIdsSet: Set<string>;
+  theme?: FloorTheme;
+}>(function TableLabelsLayer({ tables, selectedIdsSet, theme }, ref) {
+  return (
+    <Layer ref={ref} listening={false}>
+      {tables.map((obj) => {
+        const textColor = obj.customTextColor ?? theme?.tableStyle?.text ?? TABLE_COLORS.text;
+        const hasIcon = !!obj.iconUrl;
+
+        // Мировые координаты центра стола с учётом поворота группы
+        const R = (obj.rotation ?? 0) * Math.PI / 180;
+        const cx = obj.width / 2, cy = obj.height / 2;
+        const wx = obj.x + cx * Math.cos(R) - cy * Math.sin(R);
+        const wy = obj.y + cx * Math.sin(R) + cy * Math.cos(R);
+
+        const labelFontSize = Math.min(16, obj.width / 4);
+        const seatsFontSize = Math.min(9, obj.width / 9);
+        const tagsFontSize  = Math.min(12, obj.width / 7);
+        const tagsText = (obj.tags ?? []).slice(0, 4).map((id) => TABLE_TAGS.find((t) => t.id === id)?.icon ?? '').join(' ');
+
+        // Центрируем текст по wx, wy — offsetX = ширина/2
+        const textW = obj.width;
+
+        return (
+          <Group key={obj.id} x={wx} y={wy}>
+            {/* Номер стола */}
+            <Text
+              x={-textW / 2} y={-14}
+              width={textW} align="center"
+              text={obj.label}
+              fontSize={labelFontSize} fontStyle="bold"
+              fill={textColor}
+              shadowColor={hasIcon ? 'rgba(0,0,0,0.5)' : undefined}
+              shadowBlur={hasIcon ? 2 : 0}
+            />
+            {/* Вместимость */}
+            <Text
+              x={-textW / 2} y={5}
+              width={textW} align="center"
+              text={seatsLabel(obj.minGuests, obj.maxGuests)}
+              fontSize={seatsFontSize}
+              fill={textColor} opacity={0.8}
+              shadowColor={hasIcon ? 'rgba(0,0,0,0.4)' : undefined}
+              shadowBlur={hasIcon ? 2 : 0}
+            />
+            {/* Теги */}
+            {tagsText && (
+              <Text
+                x={-textW / 2} y={18}
+                width={textW} align="center"
+                text={tagsText}
+                fontSize={tagsFontSize}
+              />
+            )}
+          </Group>
+        );
+      })}
+    </Layer>
+  );
+});
 
 // ─── Декор ────────────────────────────────────────────────────────────────────
 
@@ -357,6 +401,60 @@ function DecorShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, drag
   );
 }
 
+// ─── Текстовая метка ──────────────────────────────────────────────────────────
+
+function TextLabelShape({ obj, isSelected, onSelect, onDragEnd, onTransformEnd, draggable }: {
+  obj: TextLabelObject;
+  isSelected: boolean;
+  onSelect: (shiftKey?: boolean) => void;
+  onDragEnd: (x: number, y: number) => void;
+  onTransformEnd: (x: number, y: number, w: number, h: number, r: number) => void;
+  draggable: boolean;
+}) {
+  const groupRef = useRef<Konva.Group>(null);
+  const fontStyle = [obj.italic ? 'italic' : '', obj.bold ? 'bold' : ''].filter(Boolean).join(' ') || 'normal';
+
+  return (
+    <Group
+      ref={groupRef}
+      id={obj.id}
+      x={obj.x} y={obj.y}
+      rotation={obj.rotation}
+      draggable={draggable}
+      onClick={(e) => { e.cancelBubble = true; onSelect(e.evt.shiftKey); }}
+      onTap={(e) => { e.cancelBubble = true; onSelect(); }}
+      onDragEnd={(e) => onDragEnd(snapToGrid(e.target.x()), snapToGrid(e.target.y()))}
+      onTransformEnd={() => {
+        const node = groupRef.current!;
+        const sx = node.scaleX(), sy = node.scaleY();
+        node.scaleX(1); node.scaleY(1);
+        onTransformEnd(snapToGrid(node.x()), snapToGrid(node.y()), Math.max(40, Math.round(obj.width * sx)), Math.max(20, Math.round(obj.height * sy)), node.rotation());
+      }}
+    >
+      {/* Фоновый прямоугольник (только при выделении) */}
+      {isSelected && (
+        <Rect
+          width={obj.width} height={obj.height}
+          fill="rgba(59,130,246,0.06)"
+          stroke="#3b82f6" strokeWidth={1.5}
+          dash={[5, 3]}
+          cornerRadius={3}
+        />
+      )}
+      <Text
+        x={2} y={2}
+        width={obj.width - 4}
+        text={obj.text || 'Текст'}
+        fontSize={obj.fontSize}
+        fontStyle={fontStyle}
+        textDecoration={obj.underline ? 'underline' : ''}
+        fill={obj.text ? obj.fontColor : '#9ca3af'}
+        wrap="word"
+      />
+    </Group>
+  );
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface KonvaCanvasProps {
@@ -381,8 +479,9 @@ export default function KonvaCanvas({
   const stageRef       = useRef<Konva.Stage>(null);
   const transformerRef = useRef<Konva.Transformer>(null);
   const containerRef   = useRef<HTMLDivElement>(null);
-  const gridLayerRef   = useRef<Konva.Layer>(null);
-  const tableLayerRef  = useRef<Konva.Layer>(null);
+  const gridLayerRef         = useRef<Konva.Layer>(null);
+  const tableLayerRef        = useRef<Konva.Layer>(null);
+  const tableLabelsLayerRef  = useRef<Konva.Layer>(null);
   const didInit        = useRef(false);
   const didDrag        = useRef(false);
   const isPanning      = useRef(false);
@@ -572,9 +671,10 @@ export default function KonvaCanvas({
       const stage = stageRef.current;
       if (!stage) return null;
 
-      // Скрываем сетку и столы — в снапшоте только фон + покрытия + декор
+      // Скрываем сетку, столы и метки столов — в снапшоте только фон + покрытия + декор
       gridLayerRef.current?.hide();
       tableLayerRef.current?.hide();
+      tableLabelsLayerRef.current?.hide();
       stage.batchDraw();
 
       const sx = stage.scaleX();
@@ -590,6 +690,7 @@ export default function KonvaCanvas({
 
       gridLayerRef.current?.show();
       tableLayerRef.current?.show();
+      tableLabelsLayerRef.current?.show();
       stage.batchDraw();
 
       if (!dataUrl || dataUrl.length < 200) return null;
@@ -603,9 +704,10 @@ export default function KonvaCanvas({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onCaptureReady]);
 
-  const floors = floorPlan.objects.filter((o) => o.type === 'floor') as FloorObject[];
-  const tables = floorPlan.objects.filter((o) => o.type === 'table') as TableObject[];
-  const decors = floorPlan.objects.filter((o) => o.type !== 'table' && o.type !== 'floor') as DecorativeObject[];
+  const floors      = floorPlan.objects.filter((o) => o.type === 'floor') as FloorObject[];
+  const tables      = floorPlan.objects.filter((o) => o.type === 'table') as TableObject[];
+  const decors      = floorPlan.objects.filter((o) => o.type !== 'table' && o.type !== 'floor' && o.type !== 'text') as DecorativeObject[];
+  const textLabels  = floorPlan.objects.filter((o) => o.type === 'text') as TextLabelObject[];
 
   // Паттерн пола — canvas-текстура для Konva fillPatternImage
   const patternCanvas = useMemo(() => {
@@ -720,6 +822,21 @@ export default function KonvaCanvas({
           ))}
         </Layer>
 
+        {/* Текстовые метки (входят в снапшот) */}
+        <Layer>
+          {textLabels.map((obj) => (
+            <TextLabelShape
+              key={obj.id}
+              obj={obj}
+              isSelected={selectedIdsSet.has(obj.id)}
+              onSelect={(shiftKey) => isSelectMode && onSelect(obj.id, shiftKey)}
+              onDragEnd={(x, y) => onObjectMove(obj.id, x, y)}
+              onTransformEnd={(x, y, w, h, r) => onObjectTransform(obj.id, x, y, w, h, r)}
+              draggable={isSelectMode}
+            />
+          ))}
+        </Layer>
+
         {/* Столы (скрываются при захвате снапшота) */}
         <Layer ref={tableLayerRef}>
           {tables.map((obj) => (
@@ -746,6 +863,9 @@ export default function KonvaCanvas({
             rotationSnaps={[0, 45, 90, 135, 180, 225, 270, 315]}
           />
         </Layer>
+
+        {/* Горизонтальные метки столов (поверх всего, не поворачиваются вместе со столом) */}
+        <TableLabelsLayer ref={tableLabelsLayerRef} tables={tables} selectedIdsSet={selectedIdsSet} theme={floorPlan.theme} />
 
         {/* Прямоугольник выделения области */}
         {selBox && (

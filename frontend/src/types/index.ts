@@ -118,7 +118,23 @@ export interface FloorObject {
   patternScaleY?: number;
 }
 
-export type FloorPlanObject = TableObject | DecorativeObject | FloorObject;
+export interface TextLabelObject {
+  type: 'text';
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+  text: string;
+  fontSize: number;
+  fontColor: string;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+}
+
+export type FloorPlanObject = TableObject | DecorativeObject | FloorObject | TextLabelObject;
 
 export interface TableObject {
   type: 'table';
