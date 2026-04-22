@@ -69,11 +69,19 @@ export default function HallEditorPage({ params }: { params: { id: string } }) {
           <span className="text-gray-300">/</span>
           <span className="text-gray-900 font-medium">{hall.name}</span>
         </nav>
-        {!canManage && (
-          <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
-            Только просмотр
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          <Link
+            href={`/dashboard/hall-editor-3d/${id}`}
+            className="text-xs text-purple-600 bg-purple-50 border border-purple-200 hover:bg-purple-100 rounded-full px-3 py-1 transition-colors"
+          >
+            ✦ Открыть 3D β
+          </Link>
+          {!canManage && (
+            <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-3 py-1">
+              Только просмотр
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Editor (flex-1) */}
