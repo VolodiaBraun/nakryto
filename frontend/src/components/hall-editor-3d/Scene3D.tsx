@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { Canvas, ThreeEvent, useThree } from '@react-three/fiber';
 import { OrbitControls, Line, Text } from '@react-three/drei';
 import * as THREE from 'three';
@@ -8,68 +8,59 @@ import type { Hall3DPlan, Vec2, WallElement, WallElementType } from './types3d';
 import { WALL_ELEMENT_META } from './types3d';
 import type { Table } from '@/types';
 
-// ─── Polygon math helpers ─────────────────────────────────────────────────────
+// ─── Math helpers ─────────────────────────────────────────────────────────────
 
 function wallAngle(p1: Vec2, p2: Vec2) {
-  const dx = p2.x - p1.x;
-  const dz = p2.y - p1.y;
-  return Math.atan2(-dz, dx);
+  return Math.atan2(-(p2.y - p1.y), p2.x - p1.x);
 }
 
 function wallLength(p1: Vec2, p2: Vec2) {
-  const dx = p2.x - p1.x;
-  const dz = p2.y - p1.y;
+  const dx = p2.x - p1.x, dz = p2.y - p1.y;
   return Math.sqrt(dx * dx + dz * dz);
 }
 
-// Convert hit point on a wall to (offsetAlong 0..1, heightFromFloor)
-function hitToWallUV(
-  hitPoint: THREE.Vector3,
-  p1: Vec2,
-  p2: Vec2,
-  wallHeight: number,
-): { offsetAlong: number; heightFromFloor: number } {
-  const dx = p2.x - p1.x;
-  const dz = p2.y - p1.y;
+function hitToWallUV(hit: THREE.Vector3, p1: Vec2, p2: Vec2, wallHeight: number) {
+  const dx = p2.x - p1.x, dz = p2.y - p1.y;
   const len = Math.sqrt(dx * dx + dz * dz);
-  const cx = (p1.x + p2.x) / 2;
-  const cz = (p1.y + p2.y) / 2;
-  const wallCenter = new THREE.Vector3(cx, wallHeight / 2, cz);
-  const rel = hitPoint.clone().sub(wallCenter);
+  const cx = (p1.x + p2.x) / 2, cz = (p1.y + p2.y) / 2;
+  const rel = hit.clone().sub(new THREE.Vector3(cx, wallHeight / 2, cz));
   const edgeDir = new THREE.Vector3(dx / len, 0, dz / len);
-  const localX = rel.dot(edgeDir);
-  const localY = rel.y;
   return {
-    offsetAlong: Math.max(0.05, Math.min(0.95, (localX + len / 2) / len)),
-    heightFromFloor: Math.max(0.1, Math.min(wallHeight - 0.1, localY + wallHeight / 2)),
+    offsetAlong: Math.max(0.05, Math.min(0.95, (rel.dot(edgeDir) + len / 2) / len)),
+    heightFromFloor: Math.max(0.1, Math.min(wallHeight - 0.1, rel.y + wallHeight / 2)),
   };
 }
 
-// ─── Camera auto-fit ──────────────────────────────────────────────────────────
+// ─── Camera setup ─────────────────────────────────────────────────────────────
 
-function CameraSetup({ polygon }: { polygon: Vec2[] }) {
+function CameraSetup({
+  polygon,
+  viewOnly,
+}: {
+  polygon: Vec2[];
+  viewOnly: boolean;
+}) {
   const { camera } = useThree();
   useEffect(() => {
-    if (polygon.length < 3) {
-      camera.position.set(5, 10, 14);
-      camera.lookAt(5, 0, 5);
-      return;
-    }
-    const xs = polygon.map((p) => p.x);
-    const zs = polygon.map((p) => p.y);
+    const xs = polygon.length >= 3 ? polygon.map((p) => p.x) : [0, 10];
+    const zs = polygon.length >= 3 ? polygon.map((p) => p.y) : [0, 8];
     const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
     const cz = (Math.min(...zs) + Math.max(...zs)) / 2;
-    const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs));
-    camera.position.set(cx, span * 1.2, cz + span * 1.1);
+    const span = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...zs) - Math.min(...zs), 4);
+    if (viewOnly) {
+      // Fixed top-down perspective for guests
+      camera.position.set(cx, span * 1.8, cz + span * 0.5);
+    } else {
+      camera.position.set(cx, span * 1.2, cz + span * 1.1);
+    }
     camera.lookAt(cx, 0, cz);
   }, []); // once on mount
   return null;
 }
 
 // ─── Floor ────────────────────────────────────────────────────────────────────
-// ShapeGeometry lives in XY plane. Rotating by [Math.PI/2, 0, 0] maps:
-//   local (x, y) → world (x, 0, y)  ← matches polygon.y → world Z
-// Normal after this rotation points -Y (downward), so we use DoubleSide.
+// rotation=[Math.PI/2] maps shape (x,y) → world (x, 0, y), matching walls at world Z = polygon.y
+// DoubleSide needed because normal points downward after this rotation
 
 function Floor({ polygon, color }: { polygon: Vec2[]; color: string }) {
   const geometry = useMemo(() => {
@@ -84,36 +75,37 @@ function Floor({ polygon, color }: { polygon: Vec2[]; color: string }) {
   if (!geometry) return null;
 
   return (
-    // [Math.PI/2, 0, 0] maps shape (x,y) → world (x, 0, y), aligning with walls
     <mesh geometry={geometry} rotation={[Math.PI / 2, 0, 0]} position={[0, 0.001, 0]} receiveShadow>
       <meshStandardMaterial color={color} roughness={0.8} side={THREE.DoubleSide} />
     </mesh>
   );
 }
 
-// ─── Single wall face ─────────────────────────────────────────────────────────
+// ─── Wall (BoxGeometry with thickness) ───────────────────────────────────────
 
 interface WallProps {
   p1: Vec2;
   p2: Vec2;
   wallHeight: number;
+  wallThickness: number;
   color: string;
   wallIndex: number;
   interactive: boolean;
   onWallClick?: (wallIndex: number, offsetAlong: number, heightFromFloor: number) => void;
 }
 
-function Wall({ p1, p2, wallHeight, color, wallIndex, interactive, onWallClick }: WallProps) {
+function Wall({ p1, p2, wallHeight, wallThickness, color, wallIndex, interactive, onWallClick }: WallProps) {
   const [hovered, setHovered] = useState(false);
   const len = wallLength(p1, p2);
-  const cx = (p1.x + p2.x) / 2;
-  const cz = (p1.y + p2.y) / 2;
+  const cx = (p1.x + p2.x) / 2, cz = (p1.y + p2.y) / 2;
   const angle = wallAngle(p1, p2);
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
       if (!interactive || !onWallClick) return;
       e.stopPropagation();
+      // Only accept clicks on the large face (local normal.z ≈ ±1), skip edge faces
+      if (!e.face || Math.abs(e.face.normal.z) < 0.5) return;
       const { offsetAlong, heightFromFloor } = hitToWallUV(e.point, p1, p2, wallHeight);
       onWallClick(wallIndex, offsetAlong, heightFromFloor);
     },
@@ -127,15 +119,11 @@ function Wall({ p1, p2, wallHeight, color, wallIndex, interactive, onWallClick }
       onClick={handleClick}
       onPointerOver={() => interactive && setHovered(true)}
       onPointerOut={() => setHovered(false)}
-      receiveShadow
       castShadow
+      receiveShadow
     >
-      <planeGeometry args={[len, wallHeight]} />
-      <meshStandardMaterial
-        color={hovered && interactive ? '#d8d4c4' : color}
-        side={THREE.DoubleSide}
-        roughness={0.9}
-      />
+      <boxGeometry args={[len, wallHeight, wallThickness]} />
+      <meshStandardMaterial color={hovered && interactive ? '#d8d4c4' : color} roughness={0.9} />
     </mesh>
   );
 }
@@ -143,16 +131,11 @@ function Wall({ p1, p2, wallHeight, color, wallIndex, interactive, onWallClick }
 // ─── Invisible drag plane (large plane coplanar with a wall) ──────────────────
 
 function WallDragPlane({
-  wallIndex,
-  polygon,
-  wallHeight,
-  onMove,
-  onEnd,
+  wallIndex, polygon, wallHeight,
+  onMove, onEnd,
 }: {
-  wallIndex: number;
-  polygon: Vec2[];
-  wallHeight: number;
-  onMove: (offsetAlong: number, heightFromFloor: number) => void;
+  wallIndex: number; polygon: Vec2[]; wallHeight: number;
+  onMove: (o: number, h: number) => void;
   onEnd: () => void;
 }) {
   const p1 = polygon[wallIndex];
@@ -160,8 +143,7 @@ function WallDragPlane({
   if (!p1 || !p2) return null;
 
   const len = wallLength(p1, p2);
-  const cx = (p1.x + p2.x) / 2;
-  const cz = (p1.y + p2.y) / 2;
+  const cx = (p1.x + p2.x) / 2, cz = (p1.y + p2.y) / 2;
   const angle = wallAngle(p1, p2);
 
   return (
@@ -176,123 +158,95 @@ function WallDragPlane({
       onPointerUp={(e) => { e.stopPropagation(); onEnd(); }}
       onPointerLeave={(e) => { e.stopPropagation(); onEnd(); }}
     >
-      {/* Large enough to cover any drag range */}
-      <planeGeometry args={[Math.max(len * 4, 40), Math.max(wallHeight * 4, 20)]} />
+      <planeGeometry args={[Math.max(len * 4, 60), Math.max(wallHeight * 4, 20)]} />
       <meshBasicMaterial visible={false} side={THREE.DoubleSide} />
     </mesh>
   );
 }
 
-// ─── Wall element (window / door / artwork / lamp) ────────────────────────────
+// ─── Wall element ─────────────────────────────────────────────────────────────
+// Uses BoxGeometry so the element is embedded in the wall and visible from BOTH sides.
+// Depth = wallThickness + 0.06 so it protrudes slightly on each face.
 
 function WallElementMesh({
-  element,
-  polygon,
-  wallHeight,
-  selected,
-  onClick,
-  onDragStart,
+  element, polygon, wallHeight, wallThickness, selected, onClick, onDragStart,
 }: {
-  element: WallElement;
-  polygon: Vec2[];
-  wallHeight: number;
-  selected: boolean;
-  onClick: () => void;
-  onDragStart: (wallIndex: number) => void;
+  element: WallElement; polygon: Vec2[]; wallHeight: number; wallThickness: number;
+  selected: boolean; onClick: () => void; onDragStart: (wallIndex: number) => void;
 }) {
   const p1 = polygon[element.wallIndex];
   const p2 = polygon[(element.wallIndex + 1) % polygon.length];
   if (!p1 || !p2) return null;
 
-  const dx = p2.x - p1.x;
-  const dz = p2.y - p1.y;
+  const dx = p2.x - p1.x, dz = p2.y - p1.y;
   const len = Math.sqrt(dx * dx + dz * dz);
-  const cx = (p1.x + p2.x) / 2;
-  const cz = (p1.y + p2.y) / 2;
+  const cx = (p1.x + p2.x) / 2, cz = (p1.y + p2.y) / 2;
   const angle = wallAngle(p1, p2);
+  const edgeDirX = dx / len, edgeDirZ = dz / len;
 
-  const edgeDirX = dx / len;
-  const edgeDirZ = dz / len;
-  const localXOffset = (element.offsetAlong - 0.5) * len;
-  const normalX = dz / len;
-  const normalZ = -dx / len;
-  const ZFIGHT = 0.03;
-
-  const wx = cx + edgeDirX * localXOffset + normalX * ZFIGHT;
+  // Position on wall centerline — no normal offset needed (box protrudes from both faces)
+  const wx = cx + edgeDirX * (element.offsetAlong - 0.5) * len;
   const wy = element.heightFromFloor;
-  const wz = cz + edgeDirZ * localXOffset + normalZ * ZFIGHT;
+  const wz = cz + edgeDirZ * (element.offsetAlong - 0.5) * len;
 
   const meta = WALL_ELEMENT_META[element.type];
+  const depth = wallThickness + 0.06; // protrudes through both wall faces
 
   return (
     <group>
-      {/* Window frame background */}
+      {/* Window frame (slightly wider box behind glass) */}
       {element.type === 'window' && (
-        <mesh
-          position={[wx + normalX * 0.001, wy, wz + normalZ * 0.001]}
-          rotation={[0, angle, 0]}
-        >
-          <planeGeometry args={[element.width + 0.1, element.height + 0.1]} />
-          <meshStandardMaterial color="#c8c0a8" side={THREE.DoubleSide} />
+        <mesh position={[wx, wy, wz]} rotation={[0, angle, 0]}>
+          <boxGeometry args={[element.width + 0.1, element.height + 0.1, depth]} />
+          <meshStandardMaterial color="#c8c0a8" roughness={0.7} />
         </mesh>
       )}
 
-      {/* Main element */}
+      {/* Main element box */}
       <mesh
         position={[wx, wy, wz]}
         rotation={[0, angle, 0]}
         onPointerDown={(e) => {
           e.stopPropagation();
-          if (selected) {
-            onDragStart(element.wallIndex);
-          } else {
-            onClick();
-          }
+          if (selected) onDragStart(element.wallIndex);
+          else onClick();
         }}
       >
-        <planeGeometry args={[element.width, element.height]} />
+        <boxGeometry args={[element.width, element.height, depth]} />
         <meshStandardMaterial
           color={meta.color}
-          side={THREE.DoubleSide}
           transparent
-          opacity={element.type === 'window' ? 0.6 : 0.92}
+          opacity={element.type === 'window' ? 0.55 : 0.92}
+          roughness={0.4}
           emissive={selected ? '#ffffff' : '#000000'}
-          emissiveIntensity={selected ? 0.2 : 0}
+          emissiveIntensity={selected ? 0.18 : 0}
         />
       </mesh>
 
-      {/* Window cross dividers */}
+      {/* Window cross bars */}
       {element.type === 'window' && (
         <>
-          <mesh position={[wx + normalX * 0.005, wy, wz + normalZ * 0.005]} rotation={[0, angle, 0]}>
-            <planeGeometry args={[0.06, element.height + 0.05]} />
-            <meshStandardMaterial color="#c8c0a8" side={THREE.DoubleSide} />
+          <mesh position={[wx, wy, wz]} rotation={[0, angle, 0]}>
+            <boxGeometry args={[0.06, element.height + 0.04, depth + 0.01]} />
+            <meshStandardMaterial color="#a89880" />
           </mesh>
-          <mesh position={[wx + normalX * 0.005, wy, wz + normalZ * 0.005]} rotation={[0, angle, 0]}>
-            <planeGeometry args={[element.width + 0.05, 0.06]} />
-            <meshStandardMaterial color="#c8c0a8" side={THREE.DoubleSide} />
+          <mesh position={[wx, wy, wz]} rotation={[0, angle, 0]}>
+            <boxGeometry args={[element.width + 0.04, 0.06, depth + 0.01]} />
+            <meshStandardMaterial color="#a89880" />
           </mesh>
         </>
       )}
 
       {/* Lamp glow */}
       {element.type === 'lamp' && (
-        <pointLight
-          position={[wx - normalX * 0.4, wy, wz - normalZ * 0.4]}
-          color="#ffe8a0"
-          intensity={0.8}
-          distance={4}
-        />
+        <pointLight position={[wx, wy - 0.3, wz]} color="#ffe8a0" intensity={0.9} distance={5} />
       )}
 
-      {/* Selection outline */}
+      {/* Selection ring */}
       {selected && (
-        <mesh
-          position={[wx - normalX * 0.005, wy, wz - normalZ * 0.005]}
-          rotation={[0, angle, 0]}
-        >
-          <planeGeometry args={[element.width + 0.15, element.height + 0.15]} />
-          <meshBasicMaterial color="#60a5fa" side={THREE.DoubleSide} transparent opacity={0.4} />
+        <mesh position={[wx, wy, wz]} rotation={[0, angle, 0]}>
+          <boxGeometry args={[element.width + 0.2, element.height + 0.2, depth + 0.02]} />
+          <meshBasicMaterial color="#60a5fa" transparent opacity={0.3} side={THREE.BackSide} />
         </mesh>
       )}
     </group>
@@ -306,23 +260,23 @@ function Table3D({ table, scale }: { table: Table; scale: number }) {
   const z = table.positionY * scale;
   const w = (table.width || 100) * scale;
   const h = (table.height || 100) * scale;
-  const TABLE_H = 0.08;
+  const H = 0.08;
 
   return (
     <group position={[x, 0, z]}>
       {table.shape === 'ROUND' ? (
-        <mesh position={[0, TABLE_H / 2, 0]} castShadow receiveShadow>
-          <cylinderGeometry args={[Math.min(w, h) / 2, Math.min(w, h) / 2, TABLE_H, 24]} />
+        <mesh position={[0, H / 2, 0]} castShadow receiveShadow>
+          <cylinderGeometry args={[Math.min(w, h) / 2, Math.min(w, h) / 2, H, 24]} />
           <meshStandardMaterial color="#7a5c38" roughness={0.6} />
         </mesh>
       ) : (
-        <mesh position={[0, TABLE_H / 2, 0]} castShadow receiveShadow>
-          <boxGeometry args={[w, TABLE_H, h]} />
+        <mesh position={[0, H / 2, 0]} castShadow receiveShadow>
+          <boxGeometry args={[w, H, h]} />
           <meshStandardMaterial color="#7a5c38" roughness={0.6} />
         </mesh>
       )}
       <Text
-        position={[0, TABLE_H + 0.14, 0]}
+        position={[0, H + 0.14, 0]}
         rotation={[-Math.PI / 2, 0, 0]}
         fontSize={0.18}
         color="#ffffff"
@@ -337,50 +291,97 @@ function Table3D({ table, scale }: { table: Table; scale: number }) {
   );
 }
 
-// ─── Polygon drawing overlay ──────────────────────────────────────────────────
+// ─── Rectangle room drawing ───────────────────────────────────────────────────
+// Drag to define rectangular room: pointerDown = first corner, pointerUp = opposite corner.
 
-function PolygonDrawing({
-  vertices,
-  mousePos,
-  onGroundClick,
-  onGroundMove,
+function RectangleDrawing({
+  onComplete,
 }: {
-  vertices: Vec2[];
-  mousePos: Vec2 | null;
-  onGroundClick: (p: Vec2) => void;
-  onGroundMove: (p: Vec2) => void;
+  onComplete: (polygon: Vec2[]) => void;
 }) {
-  const linePoints = useMemo(() => {
-    const pts = vertices.map((v) => new THREE.Vector3(v.x, 0.02, v.y));
-    if (mousePos && vertices.length > 0) {
-      pts.push(new THREE.Vector3(mousePos.x, 0.02, mousePos.y));
-    }
-    return pts;
-  }, [vertices, mousePos]);
+  const [start, setStart] = useState<Vec2 | null>(null);
+  const [current, setCurrent] = useState<Vec2 | null>(null);
+  const isDragging = start !== null;
+
+  const preview: THREE.Vector3[] = useMemo(() => {
+    if (!start || !current) return [];
+    const { x: x1, y: z1 } = start;
+    const { x: x2, y: z2 } = current;
+    return [
+      new THREE.Vector3(x1, 0.02, z1),
+      new THREE.Vector3(x2, 0.02, z1),
+      new THREE.Vector3(x2, 0.02, z2),
+      new THREE.Vector3(x1, 0.02, z2),
+      new THREE.Vector3(x1, 0.02, z1),
+    ];
+  }, [start, current]);
 
   return (
     <>
+      {/* Ground plane for event capture */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0]}
         onPointerDown={(e) => {
           e.stopPropagation();
-          onGroundClick({ x: e.point.x, y: e.point.z });
+          const p = { x: e.point.x, y: e.point.z };
+          setStart(p);
+          setCurrent(p);
         }}
-        onPointerMove={(e) => onGroundMove({ x: e.point.x, y: e.point.z })}
+        onPointerMove={(e) => {
+          if (!isDragging) return;
+          setCurrent({ x: e.point.x, y: e.point.z });
+        }}
+        onPointerUp={(e) => {
+          e.stopPropagation();
+          if (!start || !current) return;
+          const dx = Math.abs(current.x - start.x);
+          const dz = Math.abs(current.y - start.y);
+          if (dx > 0.5 && dz > 0.5) {
+            onComplete([
+              { x: start.x,   y: start.y   },
+              { x: current.x, y: start.y   },
+              { x: current.x, y: current.y },
+              { x: start.x,   y: current.y },
+            ]);
+          }
+          setStart(null);
+          setCurrent(null);
+        }}
       >
-        <planeGeometry args={[100, 100]} />
+        <planeGeometry args={[200, 200]} />
         <meshBasicMaterial visible={false} side={THREE.DoubleSide} />
       </mesh>
 
-      {vertices.map((v, i) => (
-        <mesh key={i} position={[v.x, 0.1, v.y]}>
+      {/* Corner markers */}
+      {start && (
+        <mesh position={[start.x, 0.08, start.y]}>
           <sphereGeometry args={[0.12, 12, 12]} />
-          <meshBasicMaterial color={i === 0 ? '#ff3333' : '#3388ff'} />
+          <meshBasicMaterial color="#ff3333" />
         </mesh>
-      ))}
+      )}
+      {current && start && (
+        <mesh position={[current.x, 0.08, current.y]}>
+          <sphereGeometry args={[0.12, 12, 12]} />
+          <meshBasicMaterial color="#3388ff" />
+        </mesh>
+      )}
 
-      {linePoints.length >= 2 && (
-        <Line points={linePoints} color="#3388ff" lineWidth={2} />
+      {/* Rectangle preview */}
+      {preview.length > 0 && (
+        <Line points={preview} color="#3388ff" lineWidth={2} />
+      )}
+
+      {/* Size label */}
+      {start && current && (
+        <Text
+          position={[(start.x + current.x) / 2, 0.3, (start.y + current.y) / 2]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          fontSize={0.3}
+          color="#88aaff"
+          anchorX="center"
+        >
+          {`${Math.abs(current.x - start.x).toFixed(1)} × ${Math.abs(current.y - start.y).toFixed(1)} м`}
+        </Text>
       )}
     </>
   );
@@ -394,7 +395,7 @@ export interface Scene3DProps {
   mode: 'draw' | 'addWallElement' | 'view';
   selectedElement: string | null;
   pendingWallElement: WallElementType | null;
-  onPolygonVertex: (polygon: Vec2[]) => void;
+  viewOnly?: boolean;
   onPolygonClose: (polygon: Vec2[]) => void;
   onWallElementAdd: (e: Omit<WallElement, 'id'>) => void;
   onElementSelect: (id: string | null) => void;
@@ -402,66 +403,25 @@ export interface Scene3DProps {
 }
 
 export function Scene3D({
-  plan,
-  tables,
-  mode,
-  selectedElement,
-  pendingWallElement,
-  onPolygonVertex,
-  onPolygonClose,
-  onWallElementAdd,
-  onElementSelect,
-  onElementUpdate,
+  plan, tables, mode, selectedElement, pendingWallElement, viewOnly = false,
+  onPolygonClose, onWallElementAdd, onElementSelect, onElementUpdate,
 }: Scene3DProps) {
-  const [drawVertices, setDrawVertices] = useState<Vec2[]>([]);
-  const [mousePos, setMousePos] = useState<Vec2 | null>(null);
   const [dragging, setDragging] = useState<{ id: string; wallIndex: number } | null>(null);
 
   useEffect(() => {
-    if (mode !== 'draw') {
-      setDrawVertices([]);
-      setMousePos(null);
-    }
+    if (mode !== 'draw') setDragging(null);
   }, [mode]);
-
-  const handleGroundClick = useCallback(
-    (p: Vec2) => {
-      if (mode !== 'draw') return;
-      if (drawVertices.length >= 3) {
-        const first = drawVertices[0];
-        const dist = Math.sqrt((p.x - first.x) ** 2 + (p.y - first.y) ** 2);
-        if (dist < 0.4) {
-          onPolygonClose(drawVertices);
-          setDrawVertices([]);
-          return;
-        }
-      }
-      const next = [...drawVertices, p];
-      setDrawVertices(next);
-      onPolygonVertex(next);
-    },
-    [mode, drawVertices, onPolygonClose, onPolygonVertex],
-  );
 
   const handleWallClick = useCallback(
     (wallIndex: number, offsetAlong: number, heightFromFloor: number) => {
       if (mode !== 'addWallElement' || !pendingWallElement) return;
       const meta = WALL_ELEMENT_META[pendingWallElement];
-      onWallElementAdd({
-        type: pendingWallElement,
-        wallIndex,
-        offsetAlong,
-        heightFromFloor,
-        width: meta.defaultW,
-        height: meta.defaultH,
-      });
+      onWallElementAdd({ type: pendingWallElement, wallIndex, offsetAlong, heightFromFloor, width: meta.defaultW, height: meta.defaultH });
     },
     [mode, pendingWallElement, onWallElementAdd],
   );
 
-  const handleDragStart = useCallback((id: string, wallIndex: number) => {
-    setDragging({ id, wallIndex });
-  }, []);
+  const handleDragStart = useCallback((id: string, wallIndex: number) => setDragging({ id, wallIndex }), []);
 
   const handleDragMove = useCallback(
     (offsetAlong: number, heightFromFloor: number) => {
@@ -471,8 +431,6 @@ export function Scene3D({
     [dragging, onElementUpdate],
   );
 
-  const handleDragEnd = useCallback(() => setDragging(null), []);
-
   const isClosed = plan.polygon.length >= 3;
   const orbitEnabled = (mode === 'view' || mode === 'addWallElement') && !dragging;
 
@@ -480,11 +438,7 @@ export function Scene3D({
     if (!isClosed) return [5, 0, 5];
     const xs = plan.polygon.map((p) => p.x);
     const zs = plan.polygon.map((p) => p.y);
-    return [
-      (Math.min(...xs) + Math.max(...xs)) / 2,
-      0,
-      (Math.min(...zs) + Math.max(...zs)) / 2,
-    ];
+    return [(Math.min(...xs) + Math.max(...xs)) / 2, 0, (Math.min(...zs) + Math.max(...zs)) / 2];
   }, [plan.polygon, isClosed]);
 
   return (
@@ -494,36 +448,29 @@ export function Scene3D({
       style={{ background: '#1a1a2e' }}
       onPointerMissed={() => !dragging && onElementSelect(null)}
     >
-      <CameraSetup polygon={plan.polygon} />
+      <CameraSetup polygon={plan.polygon} viewOnly={viewOnly} />
 
       <ambientLight intensity={0.55} />
-      <directionalLight
-        position={[8, 12, 6]}
-        intensity={1.1}
-        castShadow
-        shadow-mapSize-width={1024}
-        shadow-mapSize-height={1024}
-      />
+      <directionalLight position={[8, 12, 6]} intensity={1.1} castShadow
+        shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
       <pointLight position={[-5, 6, -3]} intensity={0.3} color="#fff8e8" />
 
       <OrbitControls
         enabled={orbitEnabled}
         target={orbitTarget}
-        maxPolarAngle={Math.PI / 2.05}
+        maxPolarAngle={viewOnly ? Math.PI / 3.5 : Math.PI / 2.05}
+        minPolarAngle={viewOnly ? Math.PI / 3.5 : 0}
+        enableRotate={!viewOnly}
         minDistance={2}
-        maxDistance={40}
+        maxDistance={50}
         makeDefault
       />
 
-      <gridHelper args={[50, 50, '#888888', '#444444']} position={[0, 0, 0]} />
+      <gridHelper args={[50, 50, '#888888', '#444444']} />
 
+      {/* Rectangle drawing overlay */}
       {mode === 'draw' && (
-        <PolygonDrawing
-          vertices={drawVertices}
-          mousePos={mousePos}
-          onGroundClick={handleGroundClick}
-          onGroundMove={setMousePos}
-        />
+        <RectangleDrawing onComplete={onPolygonClose} />
       )}
 
       {isClosed && (
@@ -535,9 +482,9 @@ export function Scene3D({
             return (
               <Wall
                 key={i}
-                p1={p1}
-                p2={p2}
+                p1={p1} p2={p2}
                 wallHeight={plan.wallHeight}
+                wallThickness={plan.wallThickness ?? 0.3}
                 color={plan.wallColor}
                 wallIndex={i}
                 interactive={mode === 'addWallElement'}
@@ -546,14 +493,13 @@ export function Scene3D({
             );
           })}
 
-          {/* Invisible drag plane — mounted only while dragging */}
           {dragging && (
             <WallDragPlane
               wallIndex={dragging.wallIndex}
               polygon={plan.polygon}
               wallHeight={plan.wallHeight}
               onMove={handleDragMove}
-              onEnd={handleDragEnd}
+              onEnd={() => setDragging(null)}
             />
           )}
 
@@ -563,9 +509,10 @@ export function Scene3D({
               element={el}
               polygon={plan.polygon}
               wallHeight={plan.wallHeight}
+              wallThickness={plan.wallThickness ?? 0.3}
               selected={selectedElement === el.id}
               onClick={() => onElementSelect(el.id === selectedElement ? null : el.id)}
-              onDragStart={(wallIndex) => handleDragStart(el.id, wallIndex)}
+              onDragStart={(wi) => handleDragStart(el.id, wi)}
             />
           ))}
 
@@ -576,13 +523,7 @@ export function Scene3D({
       )}
 
       {!isClosed && mode !== 'draw' && (
-        <Text
-          position={[5, 0.5, 5]}
-          fontSize={0.4}
-          color="#666688"
-          anchorX="center"
-          anchorY="middle"
-        >
+        <Text position={[5, 0.5, 5]} fontSize={0.4} color="#666688" anchorX="center" anchorY="middle">
           {'Переключитесь в режим\n"Нарисовать контур"'}
         </Text>
       )}

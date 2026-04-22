@@ -18,6 +18,7 @@ export interface WallElement {
 export interface Hall3DPlan {
   polygon: Vec2[];
   wallHeight: number;
+  wallThickness: number;
   floorColor: string;
   wallColor: string;
   wallElements: WallElement[];
@@ -26,6 +27,7 @@ export interface Hall3DPlan {
 export const DEFAULT_PLAN: Hall3DPlan = {
   polygon: [],
   wallHeight: 3.0,
+  wallThickness: 0.3,
   floorColor: '#c8a97e',
   wallColor: '#f0ebe0',
   wallElements: [],
