@@ -13,6 +13,7 @@ export interface WallElement {
   heightFromFloor: number; // in scene units
   width: number;
   height: number;
+  textureUrl?: string;
 }
 
 export interface LightSettings {
@@ -29,6 +30,7 @@ export interface Hall3DPlan {
   wallElements: WallElement[];
   lightSettings: LightSettings;
   tablePositions: Record<string, { x: number; z: number }>; // overrides per table.id
+  floorTextureUrl?: string;
 }
 
 export const DEFAULT_PLAN: Hall3DPlan = {

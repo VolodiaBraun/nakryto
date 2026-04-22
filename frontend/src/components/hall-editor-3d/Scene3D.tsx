@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useState, useCallback, useEffect } from 'react';
+import { useMemo, useState, useCallback, useEffect, Suspense } from 'react';
 import { Canvas, ThreeEvent, useThree } from '@react-three/fiber';
-import { OrbitControls, Line, Text } from '@react-three/drei';
+import { OrbitControls, Line, Text, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import type { Hall3DPlan, Vec2, WallElement, WallElementType, LightSettings } from './types3d';
 import { WALL_ELEMENT_META } from './types3d';
@@ -47,9 +47,28 @@ function CameraSetup({ polygon, viewOnly }: { polygon: Vec2[]; viewOnly: boolean
   return null;
 }
 
+// ─── Textured materials (Suspense-safe) ───────────────────────────────────────
+
+function FloorTextureMaterial({ url }: { url: string }) {
+  const texture = useTexture(url);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(3, 3);
+  return <meshStandardMaterial map={texture} roughness={0.85} side={THREE.DoubleSide} />;
+}
+
+function ElementTextureMaterial({ url, transparent, opacity, emissive, emissiveIntensity }: {
+  url: string; transparent?: boolean; opacity?: number; emissive?: string; emissiveIntensity?: number;
+}) {
+  const texture = useTexture(url);
+  return (
+    <meshStandardMaterial map={texture} transparent={transparent} opacity={opacity}
+      roughness={0.4} emissive={emissive as THREE.ColorRepresentation} emissiveIntensity={emissiveIntensity} />
+  );
+}
+
 // ─── Floor ────────────────────────────────────────────────────────────────────
 
-function Floor({ polygon, color }: { polygon: Vec2[]; color: string }) {
+function Floor({ polygon, color, textureUrl }: { polygon: Vec2[]; color: string; textureUrl?: string }) {
   const geometry = useMemo(() => {
     if (polygon.length < 3) return null;
     const shape = new THREE.Shape();
@@ -64,7 +83,13 @@ function Floor({ polygon, color }: { polygon: Vec2[]; color: string }) {
   return (
     // [Math.PI/2] maps shape (x,y) → world (x,0,y) — matches walls at world Z = polygon.y
     <mesh geometry={geometry} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
-      <meshStandardMaterial color={color} roughness={0.85} side={THREE.DoubleSide} />
+      {textureUrl ? (
+        <Suspense fallback={<meshStandardMaterial color={color} roughness={0.85} side={THREE.DoubleSide} />}>
+          <FloorTextureMaterial url={textureUrl} />
+        </Suspense>
+      ) : (
+        <meshStandardMaterial color={color} roughness={0.85} side={THREE.DoubleSide} />
+      )}
     </mesh>
   );
 }
@@ -144,7 +169,14 @@ function WallDragPlane({ wallIndex, polygon, wallHeight, onMove, onEnd }: {
   const angle = wallAngle(p1, p2);
   return (
     <mesh position={[cx, wallHeight / 2, cz]} rotation={[0, angle, 0]}
-      onPointerMove={(e) => { e.stopPropagation(); const { offsetAlong, heightFromFloor } = hitToWallUV(e.point, p1, p2, wallHeight); onMove(offsetAlong, heightFromFloor); }}
+      onPointerMove={(e) => {
+        e.stopPropagation();
+        const { offsetAlong, heightFromFloor } = hitToWallUV(e.point, p1, p2, wallHeight);
+        // Snap to 0.1m grid
+        const snappedO = Math.max(0.05, Math.min(0.95, Math.round(offsetAlong * len / 0.1) * 0.1 / len));
+        const snappedH = Math.max(0.1, Math.min(wallHeight - 0.1, Math.round(heightFromFloor / 0.1) * 0.1));
+        onMove(snappedO, snappedH);
+      }}
       onPointerUp={(e) => { e.stopPropagation(); onEnd(); }}
       onPointerLeave={(e) => { e.stopPropagation(); onEnd(); }}
     >
@@ -204,8 +236,16 @@ function WallElementMesh({ element, polygon, wallHeight, wallThickness, selected
         onPointerDown={(e) => { e.stopPropagation(); if (selected) onDragStart(element.wallIndex); else onClick(); }}
       >
         <boxGeometry args={[element.width, element.height, depth]} />
-        <meshStandardMaterial color={meta.color} transparent opacity={element.type === 'window' ? 0.55 : 0.92}
-          roughness={0.4} emissive={selected ? '#ffffff' : '#000000'} emissiveIntensity={selected ? 0.18 : 0} />
+        {element.textureUrl ? (
+          <Suspense fallback={<meshStandardMaterial color={meta.color} transparent opacity={element.type === 'window' ? 0.55 : 0.92} roughness={0.4} emissive={selected ? '#ffffff' : '#000000'} emissiveIntensity={selected ? 0.18 : 0} />}>
+            <ElementTextureMaterial url={element.textureUrl}
+              transparent opacity={element.type === 'window' ? 0.55 : 0.92}
+              emissive={selected ? '#ffffff' : '#000000'} emissiveIntensity={selected ? 0.18 : 0} />
+          </Suspense>
+        ) : (
+          <meshStandardMaterial color={meta.color} transparent opacity={element.type === 'window' ? 0.55 : 0.92}
+            roughness={0.4} emissive={selected ? '#ffffff' : '#000000'} emissiveIntensity={selected ? 0.18 : 0} />
+        )}
       </mesh>
       {element.type === 'window' && (
         <>
@@ -362,7 +402,7 @@ export interface Scene3DProps {
   onPolygonClose: (polygon: Vec2[]) => void;
   onWallElementAdd: (e: Omit<WallElement, 'id'>) => void;
   onElementSelect: (id: string | null) => void;
-  onElementUpdate: (id: string, patch: Partial<Pick<WallElement, 'offsetAlong' | 'heightFromFloor'>>) => void;
+  onElementUpdate: (id: string, patch: Partial<Omit<WallElement, 'id' | 'type' | 'wallIndex'>>) => void;
   onTableSelect: (id: string | null) => void;
   onTableMove: (id: string, x: number, z: number) => void;
 }
@@ -424,7 +464,7 @@ export function Scene3D({
 
       {isClosed && (
         <>
-          <Floor polygon={plan.polygon} color={plan.floorColor} />
+          <Floor polygon={plan.polygon} color={plan.floorColor} textureUrl={plan.floorTextureUrl} />
 
           {/* Walls */}
           {plan.polygon.map((p1, i) => {

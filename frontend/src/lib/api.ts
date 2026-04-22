@@ -215,6 +215,17 @@ export const uploadsApi = {
       method: 'DELETE',
       body: JSON.stringify({ url }),
     }),
+
+  // Upload to S3 only — no DB save. Returns publicUrl. Used for 3D editor textures.
+  uploadPresignOnly: async (hallId: string, file: File): Promise<string> => {
+    const { uploadUrl, publicUrl } = await request<{ uploadUrl: string; publicUrl: string }>(
+      `/api/uploads/halls/${hallId}/presign?contentType=${encodeURIComponent(file.type)}`,
+      { method: 'POST' },
+    );
+    const s3Res = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+    if (!s3Res.ok) throw new Error(`S3 upload failed: ${s3Res.status}`);
+    return publicUrl;
+  },
 };
 
 // ─── Tables ───────────────────────────────────────────────────────────────────

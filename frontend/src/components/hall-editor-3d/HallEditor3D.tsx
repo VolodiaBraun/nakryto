@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { Hall, Table } from '@/types';
 import type { Hall3DPlan, Vec2, WallElement, WallElementType } from './types3d';
 import { DEFAULT_PLAN, WALL_ELEMENT_META } from './types3d';
+import { uploadsApi } from '@/lib/api';
 
 const Scene3D = dynamic(
   () => import('./Scene3D').then((m) => m.Scene3D),
@@ -45,6 +46,8 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [pendingWallElement, setPendingWallElement] = useState<WallElementType | null>(null);
+  const [uploadingEl, setUploadingEl] = useState(false);
+  const [uploadingFloor, setUploadingFloor] = useState(false);
 
   const savePlan = useCallback((next: Hall3DPlan) => {
     setPlan(next);
@@ -64,7 +67,7 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
   }, [plan, savePlan]);
 
   const handleElementUpdate = useCallback(
-    (id: string, patch: Partial<Pick<WallElement, 'offsetAlong' | 'heightFromFloor'>>) => {
+    (id: string, patch: Partial<Omit<WallElement, 'id' | 'type' | 'wallIndex'>>) => {
       setPlan((prev) => {
         const next = { ...prev, wallElements: prev.wallElements.map((e) => e.id === id ? { ...e, ...patch } : e) };
         try { localStorage.setItem(`hall3d_${hall.id}`, JSON.stringify(next)); } catch {}
@@ -117,6 +120,15 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
   const selectedTableObj: Table | undefined = selectedTable ? (hall.tables ?? []).find((t) => t.id === selectedTable) : undefined;
   const hasTableOverride = selectedTable && plan.tablePositions?.[selectedTable];
 
+  const selectedElWallLen = useMemo(() => {
+    if (!selectedEl) return 10;
+    const p1 = plan.polygon[selectedEl.wallIndex];
+    const p2 = plan.polygon[(selectedEl.wallIndex + 1) % plan.polygon.length];
+    if (!p1 || !p2) return 10;
+    const dx = p2.x - p1.x, dz = p2.y - p1.y;
+    return Math.sqrt(dx * dx + dz * dz);
+  }, [selectedEl, plan.polygon]);
+
   return (
     <div className="flex h-full bg-gray-900 text-white text-sm">
       {/* ── Left panel ── */}
@@ -158,11 +170,98 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
 
         {/* Selected wall element */}
         {selectedEl && (
-          <div className="px-4 py-3 border-b border-gray-700">
-            <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Выбрано</div>
-            <div className="text-xs text-gray-300 mb-1">{WALL_ELEMENT_META[selectedEl.type].icon} {WALL_ELEMENT_META[selectedEl.type].label}</div>
-            <div className="text-xs text-gray-500 mb-3">Выделите и тащите для перемещения</div>
-            <button className="w-full px-3 py-2 rounded bg-red-700 hover:bg-red-600 transition-colors" onClick={handleDeleteSelected}>
+          <div className="px-4 py-3 border-b border-gray-700 space-y-2.5">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">Выбрано: {WALL_ELEMENT_META[selectedEl.type].icon} {WALL_ELEMENT_META[selectedEl.type].label}</div>
+
+            {/* Position */}
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Позиция (шаг 0.1 м)</div>
+              <div className="flex gap-1.5">
+                <label className="flex-1 flex flex-col gap-0.5">
+                  <span className="text-xs text-gray-400">От края, м</span>
+                  <input type="number" step="0.1" min="0"
+                    value={parseFloat((selectedEl.offsetAlong * selectedElWallLen).toFixed(1))}
+                    className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 focus:border-blue-500 outline-none"
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v) && selectedElWallLen > 0)
+                        handleElementUpdate(selectedEl.id, { offsetAlong: Math.max(0.05, Math.min(0.95, v / selectedElWallLen)) });
+                    }} />
+                </label>
+                <label className="flex-1 flex flex-col gap-0.5">
+                  <span className="text-xs text-gray-400">От пола, м</span>
+                  <input type="number" step="0.1" min="0"
+                    value={parseFloat(selectedEl.heightFromFloor.toFixed(1))}
+                    className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 focus:border-blue-500 outline-none"
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v)) handleElementUpdate(selectedEl.id, { heightFromFloor: Math.max(0.1, v) });
+                    }} />
+                </label>
+              </div>
+            </div>
+
+            {/* Size */}
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Размер</div>
+              <div className="flex gap-1.5">
+                <label className="flex-1 flex flex-col gap-0.5">
+                  <span className="text-xs text-gray-400">Ширина, м</span>
+                  <input type="number" step="0.1" min="0.1"
+                    value={parseFloat(selectedEl.width.toFixed(1))}
+                    className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 focus:border-blue-500 outline-none"
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v) && v > 0) handleElementUpdate(selectedEl.id, { width: v });
+                    }} />
+                </label>
+                <label className="flex-1 flex flex-col gap-0.5">
+                  <span className="text-xs text-gray-400">Высота, м</span>
+                  <input type="number" step="0.1" min="0.1"
+                    value={parseFloat(selectedEl.height.toFixed(1))}
+                    className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 focus:border-blue-500 outline-none"
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v) && v > 0) handleElementUpdate(selectedEl.id, { height: v });
+                    }} />
+                </label>
+              </div>
+            </div>
+
+            {/* Texture upload */}
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Текстура</div>
+              {selectedEl.textureUrl ? (
+                <div className="flex items-center gap-2 mb-1.5">
+                  <img src={selectedEl.textureUrl} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0 border border-gray-600" />
+                  <button className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    onClick={() => handleElementUpdate(selectedEl.id, { textureUrl: undefined })}>
+                    Убрать
+                  </button>
+                </div>
+              ) : null}
+              <label className="cursor-pointer">
+                <span className={`inline-block text-xs px-2 py-1 rounded transition-colors ${uploadingEl ? 'bg-gray-600 text-gray-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-200'}`}>
+                  {uploadingEl ? '⏳ Загрузка...' : '📷 Загрузить картинку'}
+                </span>
+                <input type="file" accept="image/*" className="hidden" disabled={uploadingEl}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !selectedElement) return;
+                    setUploadingEl(true);
+                    try {
+                      const url = await uploadsApi.uploadPresignOnly(hall.id, file);
+                      handleElementUpdate(selectedElement, { textureUrl: url });
+                    } catch {}
+                    finally {
+                      setUploadingEl(false);
+                      e.target.value = '';
+                    }
+                  }} />
+              </label>
+            </div>
+
+            <button className="w-full px-3 py-2 rounded bg-red-700 hover:bg-red-600 transition-colors text-xs" onClick={handleDeleteSelected}>
               🗑 Удалить
             </button>
           </div>
@@ -201,6 +300,38 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
                 onChange={(e) => savePlan({ ...plan, floorColor: e.target.value })}
                 className="w-full h-8 rounded cursor-pointer border-0 bg-transparent" />
             </label>
+            <div className="flex flex-col gap-1">
+              <span className="text-xs text-gray-400">Текстура пола</span>
+              {plan.floorTextureUrl ? (
+                <div className="flex items-center gap-2">
+                  <img src={plan.floorTextureUrl} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0 border border-gray-600" />
+                  <button className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    onClick={() => savePlan({ ...plan, floorTextureUrl: undefined })}>
+                    Убрать
+                  </button>
+                </div>
+              ) : (
+                <label className="cursor-pointer">
+                  <span className={`inline-block text-xs px-2 py-1 rounded transition-colors ${uploadingFloor ? 'bg-gray-600 text-gray-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-200'}`}>
+                    {uploadingFloor ? '⏳ Загрузка...' : '🖼 Загрузить текстуру'}
+                  </span>
+                  <input type="file" accept="image/*" className="hidden" disabled={uploadingFloor}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setUploadingFloor(true);
+                      try {
+                        const url = await uploadsApi.uploadPresignOnly(hall.id, file);
+                        savePlan({ ...plan, floorTextureUrl: url });
+                      } catch {}
+                      finally {
+                        setUploadingFloor(false);
+                        e.target.value = '';
+                      }
+                    }} />
+                </label>
+              )}
+            </div>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-gray-400">Стены</span>
               <input type="color" value={plan.wallColor}
