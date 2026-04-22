@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import type { Hall, FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject } from '@/types';
+import type { Hall, FloorPlan, FloorPlanObject, FloorTheme, TableObject, DecorativeObject, FloorObject, TextLabelObject } from '@/types';
 import { TABLE_TAGS } from '@/lib/tableTags';
 import { TABLE_ICONS } from '@/lib/tableIcons';
 import { CHAIR_ICONS } from '@/lib/chairIcons';
@@ -54,7 +54,8 @@ export type Tool =
   | 'toilet'
   | 'stairs'
   | 'stage'
-  | 'chair';
+  | 'chair'
+  | 'text';
 
 interface ToolItem {
   id: Tool;
@@ -78,6 +79,7 @@ const TOOLS: ToolItem[] = [
   { id: 'stairs',           label: 'Лестница',        icon: '🪜', group: 'decor' },
   { id: 'stage',            label: 'Сцена',           icon: '🎭', group: 'decor' },
   { id: 'chair',            label: 'Стул / Диван',    icon: '🪑', group: 'decor' },
+  { id: 'text',             label: 'Текст',            icon: 'T',  group: 'decor' },
 ];
 
 const GROUP_LABELS: Record<string, string> = {
@@ -101,6 +103,7 @@ const DEFAULT_SIZES: Record<string, { width: number; height: number }> = {
   stairs:            { width: 120, height: 80  },
   stage:             { width: 300, height: 120 },
   chair:             { width: 40,  height: 40  },
+  text:              { width: 200, height: 50  },
 };
 
 const DECOR_LABELS: Record<string, string> = {
@@ -161,7 +164,8 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
   const selectedObject = selectedId ? (floorPlan.objects.find((o) => o.id === selectedId) || null) : null;
   const selectedTable = selectedObject?.type === 'table' ? (selectedObject as TableObject) : null;
   const selectedFloor = selectedObject?.type === 'floor' ? (selectedObject as FloorObject) : null;
-  const selectedDecor = selectedObject && selectedObject.type !== 'table' && selectedObject.type !== 'floor' ? (selectedObject as DecorativeObject) : null;
+  const selectedText  = selectedObject?.type === 'text'  ? (selectedObject as TextLabelObject) : null;
+  const selectedDecor = selectedObject && selectedObject.type !== 'table' && selectedObject.type !== 'floor' && selectedObject.type !== 'text' ? (selectedObject as DecorativeObject) : null;
 
   // ─── Select ────────────────────────────────────────────────────────────────
 
@@ -193,6 +197,20 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
         maxGuests: shape === 'RECTANGLE' ? 6 : 4,
       };
       setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, newTable] }; });
+    } else if (activeTool === 'text') {
+      const newText: TextLabelObject = {
+        type: 'text', id,
+        x: Math.round(x - size.width / 2),
+        y: Math.round(y - size.height / 2),
+        width: size.width, height: size.height, rotation: 0,
+        text: 'Текст',
+        fontSize: 18,
+        fontColor: '#1f2937',
+        bold: false,
+        italic: false,
+        underline: false,
+      };
+      setFloorPlan((prev) => { pushToHistory(prev); return { ...prev, objects: [...prev.objects, newText] }; });
     } else {
       const newDecor: DecorativeObject = {
         type: activeTool as any, id,
@@ -556,6 +574,7 @@ export default function HallEditor({ hall, onSave, onPreview }: HallEditorProps)
           selectedTable={selectedTable}
           selectedDecor={selectedDecor}
           selectedFloor={selectedFloor}
+          selectedText={selectedText}
           selectedCount={selectedIds.length}
           onUpdate={updateSelected}
           onRotate={rotateSelected}
@@ -576,6 +595,7 @@ interface PropertiesPanelProps {
   selectedTable: TableObject | null;
   selectedDecor: DecorativeObject | null;
   selectedFloor: FloorObject | null;
+  selectedText: TextLabelObject | null;
   selectedCount: number;
   onUpdate: (u: Partial<FloorPlanObject>) => void;
   onRotate: (d: number) => void;
@@ -587,7 +607,7 @@ interface PropertiesPanelProps {
 }
 
 function PropertiesPanel(props: PropertiesPanelProps) {
-  const { selectedTable, selectedDecor, selectedFloor, selectedCount, onUpdate, onRotate, onDelete, onCopy, floorPlan, onFloorPlanChange, onAddFloor } = props;
+  const { selectedTable, selectedDecor, selectedFloor, selectedText, selectedCount, onUpdate, onRotate, onDelete, onCopy, floorPlan, onFloorPlanChange, onAddFloor } = props;
 
   if (selectedCount > 1) {
     return (
@@ -603,6 +623,8 @@ function PropertiesPanel(props: PropertiesPanelProps) {
         <TableProperties table={selectedTable} onUpdate={onUpdate} onRotate={onRotate} onDelete={onDelete} />
       ) : selectedFloor ? (
         <FloorProperties floor={selectedFloor} onUpdate={onUpdate} onRotate={onRotate} onDelete={onDelete} />
+      ) : selectedText ? (
+        <TextLabelProperties text={selectedText} onUpdate={onUpdate} onRotate={onRotate} onDelete={onDelete} />
       ) : selectedDecor ? (
         <DecorProperties decor={selectedDecor} onUpdate={onUpdate} onRotate={onRotate} onDelete={onDelete} />
       ) : (
@@ -878,6 +900,89 @@ function TableProperties({ table, onUpdate, onRotate, onDelete }: {
           </div>
         </div>
       </>
+    </div>
+  );
+}
+
+// ─── Свойства текстовой метки ────────────────────────────────────────────────
+
+function TextLabelProperties({ text, onUpdate, onRotate, onDelete }: {
+  text: TextLabelObject;
+  onUpdate: (u: Partial<FloorPlanObject>) => void;
+  onRotate: (d: number) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="p-4 space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="font-medium text-gray-900 text-sm">Текстовая метка</h3>
+        <button onClick={onDelete} className="text-red-400 hover:text-red-600 text-xs flex items-center gap-1">🗑 Удалить</button>
+      </div>
+
+      <Field label="Текст">
+        <textarea
+          value={text.text}
+          onChange={(e) => onUpdate({ text: e.target.value } as any)}
+          className="input resize-none"
+          rows={3}
+          maxLength={500}
+          placeholder="Введите текст..."
+        />
+      </Field>
+
+      <SectionDivider label="Шрифт" />
+
+      <Field label="Размер (px)">
+        <input
+          type="number"
+          min={8} max={72}
+          value={text.fontSize}
+          onChange={(e) => onUpdate({ fontSize: Number(e.target.value) } as any)}
+          className="input"
+        />
+      </Field>
+
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500">Цвет текста</span>
+        <input
+          type="color"
+          value={text.fontColor}
+          onChange={(e) => onUpdate({ fontColor: e.target.value } as any)}
+          className="w-7 h-7 rounded cursor-pointer border border-gray-200 p-0.5"
+        />
+      </div>
+
+      <SectionDivider label="Стиль" />
+
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => onUpdate({ bold: !text.bold } as any)}
+          className={`flex-1 py-1.5 text-sm font-bold rounded-lg border transition-all ${
+            text.bold ? 'bg-blue-50 border-blue-400 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+          }`}
+        >B</button>
+        <button
+          onClick={() => onUpdate({ italic: !text.italic } as any)}
+          className={`flex-1 py-1.5 text-sm italic rounded-lg border transition-all ${
+            text.italic ? 'bg-blue-50 border-blue-400 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+          }`}
+        >I</button>
+        <button
+          onClick={() => onUpdate({ underline: !text.underline } as any)}
+          className={`flex-1 py-1.5 text-sm underline rounded-lg border transition-all ${
+            text.underline ? 'bg-blue-50 border-blue-400 text-blue-700' : 'border-gray-200 text-gray-600 hover:border-gray-300'
+          }`}
+        >U</button>
+      </div>
+
+      <SectionDivider label="Поворот" />
+      <Field label="Поворот">
+        <div className="flex items-center gap-2">
+          <button onClick={() => onRotate(-90)} className="flex-1 btn-secondary text-xs py-1.5">−90°</button>
+          <span className="text-xs text-gray-500 w-10 text-center">{text.rotation}°</span>
+          <button onClick={() => onRotate(90)} className="flex-1 btn-secondary text-xs py-1.5">+90°</button>
+        </div>
+      </Field>
     </div>
   );
 }
