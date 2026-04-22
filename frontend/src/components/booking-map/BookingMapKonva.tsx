@@ -3,7 +3,7 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { Stage, Layer, Rect, Ellipse, Text, Group, Image as KonvaImage } from 'react-konva';
 import { createPatternCanvas } from '@/lib/floorPatterns';
-import type { Hall, FloorPlan, TableObject, DecorativeObject, FloorObject } from '@/types';
+import type { Hall, FloorPlan, TableObject, DecorativeObject, FloorObject, TextLabelObject } from '@/types';
 import Konva from 'konva';
 import { TABLE_TAGS } from '@/lib/tableTags';
 
@@ -127,6 +127,7 @@ export default function BookingMapKonva({
   const [floorImages, setFloorImages]   = useState<Record<string, HTMLImageElement>>({});
   const [chairImages, setChairImages]   = useState<Record<string, HTMLImageElement>>({});
   const [snapshotImg, setSnapshotImg]   = useState<HTMLImageElement | null>(null);
+  const [snapshotLoading, setSnapshotLoading] = useState(!!fp.snapshotUrl);
   const [containerW, setContainerW]   = useState(0);
   const [containerH, setContainerH]  = useState(0);
   const [scale, setScale]             = useState(1);
@@ -185,9 +186,10 @@ export default function BookingMapKonva({
     setStagePos({ x: (containerW - fp.width * initScale) / 2, y: 0 });
   }, [containerW, fp.width]);
 
-  const floors = (fp.objects?.filter((o: any) => o.type === 'floor') ?? []) as FloorObject[];
-  const tables = (fp.objects?.filter((o: any) => o.type === 'table') ?? []) as TableObject[];
-  const decors = (fp.objects?.filter((o: any) => o.type !== 'table' && o.type !== 'floor') ?? []) as DecorativeObject[];
+  const floors      = (fp.objects?.filter((o: any) => o.type === 'floor') ?? []) as FloorObject[];
+  const tables      = (fp.objects?.filter((o: any) => o.type === 'table') ?? []) as TableObject[];
+  const decors      = (fp.objects?.filter((o: any) => o.type !== 'table' && o.type !== 'floor' && o.type !== 'text') ?? []) as DecorativeObject[];
+  const textLabels  = (fp.objects?.filter((o: any) => o.type === 'text') ?? []) as TextLabelObject[];
 
   // Паттерн пола
   const patternCanvas = useMemo(() => {
@@ -215,10 +217,11 @@ export default function BookingMapKonva({
   // Preload снапшота зала (быстрый путь — 1 запрос вместо N)
   useEffect(() => {
     const url = fp.snapshotUrl;
-    if (!url) { setSnapshotImg(null); return; }
+    if (!url) { setSnapshotImg(null); setSnapshotLoading(false); return; }
+    setSnapshotLoading(true);
     const img = new Image();
-    img.onload = () => setSnapshotImg(img);
-    img.onerror = () => setSnapshotImg(null);
+    img.onload = () => { setSnapshotImg(img); setSnapshotLoading(false); };
+    img.onerror = () => { setSnapshotImg(null); setSnapshotLoading(false); };
     img.src = url;
   }, [fp.snapshotUrl]);
 
@@ -326,6 +329,15 @@ export default function BookingMapKonva({
       )}
 
       <div className="relative overflow-hidden rounded-xl" style={{ height: Math.max(containerH, 200) }}>
+        {/* Skeleton — показываем пока снапшот грузится (заменяет мигание поэтапного рендера) */}
+        {snapshotLoading && (
+          <div
+            className="absolute inset-0 z-10 rounded-xl overflow-hidden"
+            style={{ background: fp.theme?.bgColor ?? (darkMode ? '#1c1c1e' : '#f3f4f6') }}
+          >
+            <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-white/10 to-transparent" />
+          </div>
+        )}
         <Stage
           ref={stageRef}
           width={containerW}
@@ -418,6 +430,27 @@ export default function BookingMapKonva({
                   );
                 })}
               </Layer>
+
+              {/* Текстовые метки */}
+              <Layer listening={false}>
+                {textLabels.map((obj) => {
+                  const fontStyle = [obj.italic ? 'italic' : '', obj.bold ? 'bold' : ''].filter(Boolean).join(' ') || 'normal';
+                  return (
+                    <Group key={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation}>
+                      <Text
+                        x={2} y={2}
+                        width={obj.width - 4}
+                        text={obj.text}
+                        fontSize={obj.fontSize}
+                        fontStyle={fontStyle}
+                        textDecoration={obj.underline ? 'underline' : ''}
+                        fill={obj.fontColor}
+                        wrap="word"
+                      />
+                    </Group>
+                  );
+                })}
+              </Layer>
             </>
           )}
 
@@ -496,27 +529,49 @@ export default function BookingMapKonva({
                           strokeWidth={isSelected || isBooked || isLocked ? 3 : 2} />
                   )}
 
-                  {/* Номер стола */}
-                  <Text x={0} y={cy - 14} width={table.width} align="center"
+                </Group>
+              );
+            })}
+          </Layer>
+
+          {/* Горизонтальные метки столов (всегда горизонтальны независимо от поворота стола) */}
+          <Layer listening={false}>
+            {tables.map((table) => {
+              const status = tableStatuses[table.id] as any;
+              const isSelected = table.id === selectedTableId;
+              const isTagFiltered = !!tagFilter && !(table.tags ?? []).includes(tagFilter);
+              const isDisabled = guestCount > table.maxGuests || guestCount < table.minGuests || isTagFiltered;
+              const isBooked = status === 'BOOKED';
+              const isLocked = status === 'LOCKED';
+              const colors = getTableColor(table, status, isSelected, guestCount, tagFilter, darkMode, fp.theme?.tableStyle);
+              const textColor = table.customTextColor ?? colors.text;
+              const cx = table.width / 2, cy = table.height / 2;
+              const iconImg = table.iconUrl ? iconImages[table.iconUrl] : null;
+              const hasIcon = !!iconImg;
+
+              // Мировые координаты центра стола с учётом поворота
+              const R = (table.rotation ?? 0) * Math.PI / 180;
+              const wx = table.x + cx * Math.cos(R) - cy * Math.sin(R);
+              const wy = table.y + cx * Math.sin(R) + cy * Math.cos(R);
+              const textW = table.width;
+
+              return (
+                <Group key={table.id} x={wx} y={wy}>
+                  <Text x={-textW / 2} y={-14} width={textW} align="center"
                     text={table.label}
                     fontSize={Math.min(16, table.width / 4)} fontStyle="bold"
-                    fill={table.customTextColor ?? colors.text}
-                    shadowColor={iconImg ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={iconImg ? 2 : 0} />
-
-                  {/* Вместимость */}
-                  <Text x={0} y={cy + 5} width={table.width} align="center"
+                    fill={textColor}
+                    shadowColor={hasIcon ? 'rgba(0,0,0,0.5)' : undefined} shadowBlur={hasIcon ? 2 : 0} />
+                  <Text x={-textW / 2} y={5} width={textW} align="center"
                     text={seatsLabel(table.minGuests, table.maxGuests)}
                     fontSize={Math.min(9, table.width / 9)}
-                    fill={table.customTextColor ?? colors.text} opacity={0.7} />
-
+                    fill={textColor} opacity={0.7} />
                   {(isBooked || isLocked) && (
-                    <Text x={0} y={table.height - 16} width={table.width} align="center"
-                      text={isLocked ? '🔒' : '✕'} fontSize={12} fill={colors.text} />
+                    <Text x={-textW / 2} y={cy - 6} width={textW} align="center"
+                      text={isLocked ? '🔒' : '✕'} fontSize={12} fill={textColor} />
                   )}
-
-                  {/* Иконки тегов */}
                   {!isBooked && !isLocked && table.tags && table.tags.length > 0 && (
-                    <Text x={0} y={cy + 18} width={table.width} align="center"
+                    <Text x={-textW / 2} y={18} width={textW} align="center"
                       text={table.tags.slice(0, 4).map((id) => TABLE_TAGS.find((t) => t.id === id)?.icon ?? '').join(' ')}
                       fontSize={Math.min(12, table.width / 7)} opacity={isDisabled ? 0.4 : 0.85} />
                   )}
