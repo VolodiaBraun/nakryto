@@ -85,6 +85,20 @@ export function HallEditor3D({ hall }: Props) {
     setSelectedElement(null);
   }, [plan, savePlan, selectedElement]);
 
+  const handleElementUpdate = useCallback(
+    (id: string, patch: Partial<Pick<WallElement, 'offsetAlong' | 'heightFromFloor'>>) => {
+      setPlan((prev) => {
+        const next = {
+          ...prev,
+          wallElements: prev.wallElements.map((e) => (e.id === id ? { ...e, ...patch } : e)),
+        };
+        try { localStorage.setItem(`hall3d_${hall.id}`, JSON.stringify(next)); } catch {}
+        return next;
+      });
+    },
+    [hall.id],
+  );
+
   const startAddWallElement = useCallback((type: WallElementType) => {
     setPendingWallElement(type);
     setMode('addWallElement');
@@ -270,6 +284,7 @@ export function HallEditor3D({ hall }: Props) {
           onPolygonClose={handlePolygonClose}
           onWallElementAdd={handleWallElementAdd}
           onElementSelect={setSelectedElement}
+          onElementUpdate={handleElementUpdate}
         />
       </div>
     </div>
