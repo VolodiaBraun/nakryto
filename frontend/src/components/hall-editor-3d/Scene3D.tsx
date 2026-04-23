@@ -4,7 +4,7 @@ import { useMemo, useState, useCallback, useEffect, Suspense } from 'react';
 import { Canvas, ThreeEvent, useThree } from '@react-three/fiber';
 import { OrbitControls, Line, Text, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
-import type { Hall3DPlan, Vec2, WallElement, WallElementType, LightSettings } from './types3d';
+import type { Hall3DPlan, Vec2, WallElement, WallElementType, LightSettings, FloorLayer } from './types3d';
 import { WALL_ELEMENT_META } from './types3d';
 import type { Table } from '@/types';
 
@@ -65,14 +65,21 @@ function WallTextureMaterial({ url, selected }: { url: string; selected: boolean
   );
 }
 
-function TableIconLayer({ url, size }: { url: string; size: number }) {
+function TableIconLayer({ url, tw, th }: { url: string; tw: number; th: number }) {
   const texture = useTexture(url);
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]}>
-      <planeGeometry args={[size, size]} />
+      <planeGeometry args={[tw, th]} />
       <meshBasicMaterial map={texture} transparent depthWrite={false} />
     </mesh>
   );
+}
+
+function FloorLayerMaterial({ url, repeat }: { url: string; repeat: { x: number; y: number } }) {
+  const texture = useTexture(url);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat.x, repeat.y);
+  return <meshStandardMaterial map={texture} roughness={0.85} transparent />;
 }
 
 function ElementTextureMaterial({ url, transparent, opacity, emissive, emissiveIntensity }: {
@@ -310,11 +317,12 @@ function WallElementMesh({ element, polygon, wallHeight, wallThickness, selected
 
 // ─── Table ────────────────────────────────────────────────────────────────────
 
-function Table3D({ table, scale, positionOverride, sizeOverride, iconUrl, selected, onSelect, onDragStart }: {
+function Table3D({ table, scale, positionOverride, sizeOverride, iconUrl, tableColor, selected, onSelect, onDragStart }: {
   table: Table; scale: number;
   positionOverride?: { x: number; z: number };
   sizeOverride?: { w: number; h: number };
   iconUrl?: string;
+  tableColor?: string;
   selected: boolean;
   onSelect: () => void;
   onDragStart: () => void;
@@ -324,8 +332,11 @@ function Table3D({ table, scale, positionOverride, sizeOverride, iconUrl, select
   const w = sizeOverride ? sizeOverride.w : (table.width || 100) * scale;
   const h = sizeOverride ? sizeOverride.h : (table.height || 100) * scale;
   const H = 0.08;
+  // Если есть иконка — нейтральный цвет (иконка покрывает весь верх), иначе — настраиваемый
+  const baseColor = iconUrl ? '#e8e4de' : (tableColor ?? '#7a5c38');
+  const activeColor = iconUrl ? '#ccc8c0' : '#a07040';
   const tableMat = (
-    <meshStandardMaterial color={selected ? '#a07040' : '#7a5c38'} roughness={0.6}
+    <meshStandardMaterial color={selected ? activeColor : baseColor} roughness={0.6}
       emissive={selected ? '#ff9900' : '#000000'} emissiveIntensity={selected ? 0.15 : 0} />
   );
 
@@ -347,11 +358,11 @@ function Table3D({ table, scale, positionOverride, sizeOverride, iconUrl, select
         </mesh>
       )}
 
-      {/* Иконка поверх стола */}
+      {/* Иконка поверх стола — полный размер, покрывает всю поверхность */}
       {iconUrl && (
         <group position={[0, H + 0.003, 0]}>
           <Suspense fallback={null}>
-            <TableIconLayer url={iconUrl} size={Math.min(w, h) * 0.75} />
+            <TableIconLayer url={iconUrl} tw={w} th={h} />
           </Suspense>
         </group>
       )}
@@ -364,8 +375,8 @@ function Table3D({ table, scale, positionOverride, sizeOverride, iconUrl, select
         </mesh>
       )}
       <Text position={[0, H + 0.14, 0]} rotation={[-Math.PI / 2, 0, 0]}
-        fontSize={0.18} color="#ffffff" anchorX="center" anchorY="middle"
-        outlineColor="#000000" outlineWidth={0.012}
+        fontSize={0.18} color={iconUrl ? '#333333' : '#ffffff'} anchorX="center" anchorY="middle"
+        outlineColor={iconUrl ? '#ffffff' : '#000000'} outlineWidth={0.012}
       >
         {table.label}
       </Text>
@@ -519,6 +530,16 @@ export function Scene3D({
           <Floor polygon={plan.polygon} color={plan.floorColor}
             textureUrl={plan.floorTextureUrl} textureRepeat={plan.floorTextureRepeat} />
 
+          {/* Слои текстур пола */}
+          {(plan.floorLayers ?? []).map((layer) => (
+            <mesh key={layer.id} position={[layer.x, 0.002, layer.z]} rotation={[-Math.PI / 2, 0, 0]}>
+              <planeGeometry args={[layer.width, layer.height]} />
+              <Suspense fallback={null}>
+                <FloorLayerMaterial url={layer.textureUrl} repeat={layer.repeat} />
+              </Suspense>
+            </mesh>
+          ))}
+
           {/* Walls */}
           {plan.polygon.map((p1, i) => {
             const p2 = plan.polygon[(i + 1) % plan.polygon.length];
@@ -569,6 +590,7 @@ export function Scene3D({
               positionOverride={plan.tablePositions?.[t.id]}
               sizeOverride={plan.tableSizeOverrides?.[t.id]}
               iconUrl={plan.tableIcons?.[t.id]}
+              tableColor={plan.tableColors?.[t.id]}
               selected={selectedTable === t.id}
               onSelect={() => onTableSelect(t.id === selectedTable ? null : t.id)}
               onDragStart={() => setDraggingTable(t.id)} />

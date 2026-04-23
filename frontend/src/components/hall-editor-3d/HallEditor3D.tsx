@@ -51,6 +51,7 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
   const [uploadingFloor, setUploadingFloor] = useState(false);
   const [uploadingWall, setUploadingWall] = useState(false);
   const [uploadingTableIcon, setUploadingTableIcon] = useState(false);
+  const [uploadingLayer, setUploadingLayer] = useState(false);
 
   const savePlan = useCallback((next: Hall3DPlan) => {
     setPlan(next);
@@ -128,6 +129,13 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
   const selectedEl = selectedElement ? plan.wallElements.find((e) => e.id === selectedElement) : null;
   const selectedTableObj: Table | undefined = selectedTable ? (hall.tables ?? []).find((t) => t.id === selectedTable) : undefined;
   const hasTableOverride = selectedTable && plan.tablePositions?.[selectedTable];
+
+  const roomCenter = useMemo(() => {
+    if (plan.polygon.length < 3) return { x: 0, z: 0 };
+    const xs = plan.polygon.map((p) => p.x);
+    const zs = plan.polygon.map((p) => p.y);
+    return { x: (Math.min(...xs) + Math.max(...xs)) / 2, z: (Math.min(...zs) + Math.max(...zs)) / 2 };
+  }, [plan.polygon]);
 
   const selectedElWallLen = useMemo(() => {
     if (!selectedEl) return 10;
@@ -374,6 +382,26 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
               )}
             </div>
 
+            {/* Цвет стола (только когда нет иконки) */}
+            {!plan.tableIcons?.[selectedTableObj.id] && (
+              <label className="flex flex-col gap-1">
+                <span className="text-xs text-gray-400">Цвет стола</span>
+                <div className="flex items-center gap-2">
+                  <input type="color"
+                    value={plan.tableColors?.[selectedTableObj.id] ?? '#7a5c38'}
+                    className="w-full h-8 rounded cursor-pointer border-0 bg-transparent"
+                    onChange={(e) => savePlan({ ...plan, tableColors: { ...plan.tableColors, [selectedTableObj.id]: e.target.value } })} />
+                  {plan.tableColors?.[selectedTableObj.id] && (
+                    <button className="text-xs text-gray-500 hover:text-gray-300 flex-shrink-0 transition-colors"
+                      onClick={() => {
+                        const { [selectedTableObj.id]: _, ...rest } = plan.tableColors ?? {};
+                        savePlan({ ...plan, tableColors: rest });
+                      }}>↩</button>
+                  )}
+                </div>
+              </label>
+            )}
+
             {/* Иконка стола */}
             <div>
               <div className="text-xs text-gray-500 mb-1">Иконка стола</div>
@@ -426,65 +454,85 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
                 onChange={(e) => savePlan({ ...plan, floorColor: e.target.value })}
                 className="w-full h-8 rounded cursor-pointer border-0 bg-transparent" />
             </label>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs text-gray-400">Текстура пола</span>
-              {plan.floorTextureUrl ? (
-                <div className="flex items-center gap-2">
-                  <img src={plan.floorTextureUrl} alt="" className="w-9 h-9 rounded object-cover flex-shrink-0 border border-gray-600" />
-                  <button className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                    onClick={() => savePlan({ ...plan, floorTextureUrl: undefined })}>
-                    Убрать
-                  </button>
-                </div>
-              ) : (
+            {/* Слои текстур пола */}
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs text-gray-400">Слои пола</span>
                 <label className="cursor-pointer">
-                  <span className={`inline-block text-xs px-2 py-1 rounded transition-colors ${uploadingFloor ? 'bg-gray-600 text-gray-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-200'}`}>
-                    {uploadingFloor ? '⏳ Загрузка...' : '🖼 Загрузить текстуру'}
+                  <span className={`text-xs px-2 py-0.5 rounded transition-colors ${uploadingLayer ? 'bg-gray-600 text-gray-400' : 'bg-blue-700 hover:bg-blue-600 text-white'}`}>
+                    {uploadingLayer ? '⏳' : '+ Добавить'}
                   </span>
-                  <input type="file" accept="image/*" className="hidden" disabled={uploadingFloor}
+                  <input type="file" accept="image/*" className="hidden" disabled={uploadingLayer}
                     onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (!file) return;
-                      setUploadingFloor(true);
+                      setUploadingLayer(true);
                       try {
                         const url = await uploadsApi.uploadPresignOnly(hall.id, file);
-                        savePlan({ ...plan, floorTextureUrl: url });
+                        const newLayer = { id: crypto.randomUUID(), x: roomCenter.x, z: roomCenter.z, width: 3, height: 3, textureUrl: url, repeat: { x: 3, y: 3 } };
+                        savePlan({ ...plan, floorLayers: [...(plan.floorLayers ?? []), newLayer] });
                       } catch {}
-                      finally {
-                        setUploadingFloor(false);
-                        e.target.value = '';
-                      }
+                      finally { setUploadingLayer(false); e.target.value = ''; }
                     }} />
                 </label>
-              )}
-            </div>
-            {plan.floorTextureUrl && (
-              <div>
-                <div className="text-xs text-gray-500 mb-1">Повтор текстуры пола</div>
-                <div className="flex gap-1.5">
-                  <label className="flex-1 flex flex-col gap-0.5">
-                    <span className="text-xs text-gray-400">По X</span>
-                    <input type="number" step="0.5" min="0.5" max="20"
-                      value={plan.floorTextureRepeat?.x ?? 3}
-                      className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 outline-none"
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        if (!isNaN(v) && v > 0) savePlan({ ...plan, floorTextureRepeat: { x: v, y: plan.floorTextureRepeat?.y ?? 3 } });
-                      }} />
-                  </label>
-                  <label className="flex-1 flex flex-col gap-0.5">
-                    <span className="text-xs text-gray-400">По Y</span>
-                    <input type="number" step="0.5" min="0.5" max="20"
-                      value={plan.floorTextureRepeat?.y ?? 3}
-                      className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 outline-none"
-                      onChange={(e) => {
-                        const v = parseFloat(e.target.value);
-                        if (!isNaN(v) && v > 0) savePlan({ ...plan, floorTextureRepeat: { x: plan.floorTextureRepeat?.x ?? 3, y: v } });
-                      }} />
-                  </label>
-                </div>
               </div>
-            )}
+              {(plan.floorLayers ?? []).length === 0 && (
+                <div className="text-xs text-gray-600">Нет слоёв — добавьте текстуру</div>
+              )}
+              {(plan.floorLayers ?? []).map((layer, idx) => (
+                <div key={layer.id} className="bg-gray-750 border border-gray-700 rounded p-2 mb-2 space-y-1.5" style={{ background: '#2a2a3e' }}>
+                  <div className="flex items-center gap-2">
+                    <img src={layer.textureUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0 border border-gray-600" />
+                    <span className="text-xs text-gray-400 flex-1">Слой {idx + 1}</span>
+                    <button className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                      onClick={() => savePlan({ ...plan, floorLayers: (plan.floorLayers ?? []).filter((l) => l.id !== layer.id) })}>
+                      ×
+                    </button>
+                  </div>
+                  <div className="flex gap-1">
+                    <label className="flex-1 flex flex-col gap-0.5">
+                      <span className="text-[10px] text-gray-500">X, м</span>
+                      <input type="number" step="0.5"
+                        value={parseFloat(layer.x.toFixed(1))}
+                        className="w-full bg-gray-700 rounded px-1.5 py-0.5 text-xs text-white border border-gray-600 outline-none"
+                        onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) savePlan({ ...plan, floorLayers: (plan.floorLayers ?? []).map((l) => l.id === layer.id ? { ...l, x: v } : l) }); }} />
+                    </label>
+                    <label className="flex-1 flex flex-col gap-0.5">
+                      <span className="text-[10px] text-gray-500">Z, м</span>
+                      <input type="number" step="0.5"
+                        value={parseFloat(layer.z.toFixed(1))}
+                        className="w-full bg-gray-700 rounded px-1.5 py-0.5 text-xs text-white border border-gray-600 outline-none"
+                        onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v)) savePlan({ ...plan, floorLayers: (plan.floorLayers ?? []).map((l) => l.id === layer.id ? { ...l, z: v } : l) }); }} />
+                    </label>
+                    <label className="flex-1 flex flex-col gap-0.5">
+                      <span className="text-[10px] text-gray-500">Ш, м</span>
+                      <input type="number" step="0.5" min="0.5"
+                        value={parseFloat(layer.width.toFixed(1))}
+                        className="w-full bg-gray-700 rounded px-1.5 py-0.5 text-xs text-white border border-gray-600 outline-none"
+                        onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) savePlan({ ...plan, floorLayers: (plan.floorLayers ?? []).map((l) => l.id === layer.id ? { ...l, width: v } : l) }); }} />
+                    </label>
+                    <label className="flex-1 flex flex-col gap-0.5">
+                      <span className="text-[10px] text-gray-500">Г, м</span>
+                      <input type="number" step="0.5" min="0.5"
+                        value={parseFloat(layer.height.toFixed(1))}
+                        className="w-full bg-gray-700 rounded px-1.5 py-0.5 text-xs text-white border border-gray-600 outline-none"
+                        onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) savePlan({ ...plan, floorLayers: (plan.floorLayers ?? []).map((l) => l.id === layer.id ? { ...l, height: v } : l) }); }} />
+                    </label>
+                  </div>
+                  <div className="flex gap-1 items-center">
+                    <span className="text-[10px] text-gray-500 flex-shrink-0">Повтор X/Y:</span>
+                    <input type="number" step="0.5" min="0.5" max="20"
+                      value={parseFloat(layer.repeat.x.toFixed(1))}
+                      className="flex-1 bg-gray-700 rounded px-1.5 py-0.5 text-xs text-white border border-gray-600 outline-none"
+                      onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) savePlan({ ...plan, floorLayers: (plan.floorLayers ?? []).map((l) => l.id === layer.id ? { ...l, repeat: { x: v, y: l.repeat.y } } : l) }); }} />
+                    <input type="number" step="0.5" min="0.5" max="20"
+                      value={parseFloat(layer.repeat.y.toFixed(1))}
+                      className="flex-1 bg-gray-700 rounded px-1.5 py-0.5 text-xs text-white border border-gray-600 outline-none"
+                      onChange={(e) => { const v = parseFloat(e.target.value); if (!isNaN(v) && v > 0) savePlan({ ...plan, floorLayers: (plan.floorLayers ?? []).map((l) => l.id === layer.id ? { ...l, repeat: { x: l.repeat.x, y: v } } : l) }); }} />
+                  </div>
+                </div>
+              ))}
+            </div>
             <label className="flex flex-col gap-1">
               <span className="text-xs text-gray-400">Стены</span>
               <input type="color" value={plan.wallColor}

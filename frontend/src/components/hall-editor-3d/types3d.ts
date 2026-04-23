@@ -16,6 +16,14 @@ export interface WallElement {
   textureUrl?: string;
 }
 
+export interface FloorLayer {
+  id: string;
+  x: number; z: number;      // позиция центра в единицах сцены
+  width: number; height: number; // размер в метрах
+  textureUrl: string;
+  repeat: { x: number; y: number };
+}
+
 export interface LightSettings {
   ambientIntensity: number;
   mainIntensity: number;
@@ -32,9 +40,11 @@ export interface Hall3DPlan {
   tablePositions: Record<string, { x: number; z: number }>; // overrides per table.id
   floorTextureUrl?: string;
   floorTextureRepeat?: { x: number; y: number };
-  wallTextures?: Record<number, string>; // per-wall texture URL, keyed by wallIndex
-  tableIcons?: Record<string, string>; // per-table icon URL, keyed by table.id
-  tableSizeOverrides?: Record<string, { w: number; h: number }>; // per-table size in meters
+  wallTextures?: Record<number, string>;
+  tableIcons?: Record<string, string>;
+  tableColors?: Record<string, string>;
+  tableSizeOverrides?: Record<string, { w: number; h: number }>;
+  floorLayers?: FloorLayer[];
 }
 
 export const DEFAULT_PLAN: Hall3DPlan = {
