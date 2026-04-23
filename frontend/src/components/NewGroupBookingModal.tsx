@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { bookingsApi, hallsApi } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -43,12 +43,54 @@ export default function NewGroupBookingModal({ open, onClose }: Props) {
     enabled: open,
   });
 
+  // Fetch day bookings for conflict preview
+  const { data: dayBookingsData } = useQuery<any>({
+    queryKey: ['bookings-day-preview', form.date],
+    queryFn: () => bookingsApi.getAll({ date: form.date }),
+    enabled: open && !!form.date && !!selectedHallId,
+  });
+
   const currentHall = (halls as any[]).find((h) => h.id === selectedHallId);
   const hallTables: any[] = [...(currentHall?.tables ?? [])].sort((a, b) => {
     const na = parseInt(a.label), nb = parseInt(b.label);
     if (!isNaN(na) && !isNaN(nb)) return na - nb;
     return a.label.localeCompare(b.label);
   });
+
+  // Compute which tables are busy for the selected time range
+  const busyTableIds = useMemo(() => {
+    const busy = new Set<string>();
+    if (!form.date || !form.startTime || !form.endTime || !selectedHallId) return busy;
+
+    const [sh, sm] = snapTo5(form.startTime).split(':').map(Number);
+    const [eh, em] = snapTo5(form.endTime).split(':').map(Number);
+    const rangeStart = new Date(form.date); rangeStart.setHours(sh, sm, 0, 0);
+    const rangeEnd = new Date(form.date); rangeEnd.setHours(eh, em, 0, 0);
+    if (rangeEnd <= rangeStart) return busy;
+
+    const items: any[] = dayBookingsData?.items || [];
+    const overlapping = items.filter(
+      (b: any) =>
+        new Date(b.startsAt) < rangeEnd &&
+        new Date(b.endsAt) > rangeStart &&
+        b.status !== 'CANCELLED' &&
+        b.status !== 'NO_SHOW',
+    );
+
+    overlapping.forEach((b: any) => {
+      if (b.tableId) {
+        busy.add(b.tableId);
+      } else if (b.bookingType === 'HALL' && b.hallId === selectedHallId) {
+        hallTables.forEach((t: any) => busy.add(t.id));
+      }
+    });
+    return busy;
+  }, [form.date, form.startTime, form.endTime, selectedHallId, dayBookingsData, hallTables]);
+
+  const hallHasConflict = bookingType === 'hall' && busyTableIds.size > 0 && hallTables.length > 0;
+  const conflictLabels = hallTables
+    .filter((t: any) => busyTableIds.has(t.id))
+    .map((t: any) => `ст. ${t.label}`);
 
   const reset = () => {
     setBookingType('hall');
@@ -154,6 +196,13 @@ export default function NewGroupBookingModal({ open, onClose }: Props) {
           </select>
         </div>
 
+        {/* Hall conflict warning */}
+        {hallHasConflict && conflictLabels.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-sm text-amber-800">
+            ⚠️ Заняты: {conflictLabels.join(', ')} — зал нельзя забронировать на это время
+          </div>
+        )}
+
         {/* Tables (group mode) */}
         {bookingType === 'group' && selectedHallId && (
           <div>
@@ -167,27 +216,38 @@ export default function NewGroupBookingModal({ open, onClose }: Props) {
               <p className="text-sm text-gray-400 text-center py-3">В этом зале нет столов</p>
             ) : (
               <div className="grid grid-cols-3 gap-2 max-h-44 overflow-y-auto border border-gray-200 rounded-xl p-2 bg-gray-50">
-                {hallTables.map((t) => {
+                {hallTables.map((t: any) => {
                   const checked = selectedTableIds.includes(t.id);
+                  const busy = busyTableIds.has(t.id);
                   return (
                     <label
                       key={t.id}
                       className={cn(
-                        'flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer text-sm transition-colors border',
-                        checked ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium' : 'bg-white border-gray-200 hover:border-blue-300 text-gray-700',
+                        'flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors border',
+                        busy
+                          ? 'bg-red-50 border-red-200 text-red-400 cursor-not-allowed opacity-70'
+                          : checked
+                          ? 'bg-blue-50 border-blue-300 text-blue-700 font-medium cursor-pointer'
+                          : 'bg-white border-gray-200 hover:border-blue-300 text-gray-700 cursor-pointer',
                       )}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
+                        disabled={busy}
                         onChange={(e) => {
+                          if (busy) return;
                           if (e.target.checked) setSelectedTableIds((prev) => [...prev, t.id]);
                           else setSelectedTableIds((prev) => prev.filter((id) => id !== t.id));
                         }}
                         className="accent-blue-600 w-4 h-4 flex-shrink-0"
                       />
                       <span>Ст.&nbsp;{t.label}</span>
-                      <span className="text-xs text-gray-400">{t.minGuests}–{t.maxGuests}</span>
+                      {busy ? (
+                        <span className="text-xs text-red-400 ml-auto">занят</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">{t.minGuests}–{t.maxGuests}</span>
+                      )}
                     </label>
                   );
                 })}
@@ -236,7 +296,11 @@ export default function NewGroupBookingModal({ open, onClose }: Props) {
 
         <div className="flex gap-3 pt-1">
           <button onClick={reset} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">Отмена</button>
-          <button onClick={handleSubmit} disabled={isPending} className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl disabled:opacity-50">
+          <button
+            onClick={handleSubmit}
+            disabled={isPending || (bookingType === 'hall' && hallHasConflict)}
+            className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl disabled:opacity-50"
+          >
             {isPending ? 'Создаём...' : 'Создать бронь'}
           </button>
         </div>

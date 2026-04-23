@@ -379,15 +379,25 @@ export class BookingsService {
     const startsAt = new Date(dto.startsAt);
     const endsAt = new Date(dto.endsAt);
 
-    // Конфликт: любая бронь в этом зале в это время
-    const tableConflict = await this.prisma.booking.findFirst({
+    // Конфликт: все пересекающиеся брони в этом зале
+    const conflicts = await this.prisma.booking.findMany({
       where: {
         hallId: dto.hallId,
         status: { notIn: ['CANCELLED', 'NO_SHOW'] },
         OR: [{ startsAt: { lt: endsAt }, endsAt: { gt: startsAt } }],
       },
+      include: { table: true },
     });
-    if (tableConflict) throw new ConflictException('В зале есть пересекающиеся брони на это время');
+    if (conflicts.length > 0) {
+      const tableLabels = [...new Set(
+        conflicts.filter((c) => c.tableId !== null).map((c) => `Стол ${(c as any).table?.label ?? '?'}`),
+      )];
+      const hasHallBooking = conflicts.some((c) => c.tableId === null);
+      const parts = [...tableLabels, ...(hasHallBooking ? ['другая бронь зала'] : [])];
+      throw new ConflictException(
+        `Зал нельзя забронировать — уже заняты: ${parts.length ? parts.join(', ') : 'столы в этом зале'}`,
+      );
+    }
 
     // Конфликт: закрытый период на весь ресторан
     const closedPeriod = await this.prisma.closedPeriod.findFirst({
@@ -446,26 +456,32 @@ export class BookingsService {
       throw new NotFoundException('Один или несколько столов не найдены');
     }
 
-    // Check conflicts for each table
-    for (const table of tables) {
-      const conflict = await this.prisma.booking.findFirst({
+    // Проверяем все конфликты разом — по столам и по залам
+    const [tableConflicts, hallConflicts] = await Promise.all([
+      this.prisma.booking.findMany({
         where: {
-          tableId: table.id,
+          tableId: { in: dto.tableIds },
           status: { notIn: ['CANCELLED', 'NO_SHOW'] },
           OR: [{ startsAt: { lt: endsAt }, endsAt: { gt: startsAt } }],
         },
-      });
-      if (conflict) throw new ConflictException(`Стол ${table.label} уже занят на это время`);
-
-      const hallBookingConflict = await this.prisma.booking.findFirst({
+        include: { table: true },
+      }),
+      this.prisma.booking.findMany({
         where: {
-          hallId: table.hallId,
+          hallId: { in: [...new Set(tables.map((t) => t.hallId))] },
           bookingType: 'HALL',
           status: { notIn: ['CANCELLED', 'NO_SHOW'] },
           OR: [{ startsAt: { lt: endsAt }, endsAt: { gt: startsAt } }],
         },
-      });
-      if (hallBookingConflict) throw new ConflictException(`Зал закрыт на это время (корпоративное мероприятие)`);
+        include: { hall: true },
+      }),
+    ]);
+    if (tableConflicts.length > 0 || hallConflicts.length > 0) {
+      const parts = [
+        ...new Set(tableConflicts.map((c) => `Стол ${(c as any).table?.label ?? '?'}`)),
+        ...hallConflicts.map((c) => `весь зал "${(c as any).hall?.name ?? '?'}"`),
+      ];
+      throw new ConflictException(`Нельзя забронировать — уже заняты: ${parts.join(', ')}`);
     }
 
     const groupId = require('crypto').randomUUID();
@@ -567,11 +583,11 @@ export class BookingsService {
       slotStart.setHours(h, m, 0, 0);
       const slotEnd = new Date(slotStart.getTime() + 2 * 60 * 60 * 1000); // стандартная бронь 2 часа
 
-      const bookedTableIds = existingBookings
-        .filter((b) => b.startsAt < slotEnd && b.endsAt > slotStart)
-        .map((b) => b.tableId);
+      const overlapping = existingBookings.filter((b) => b.startsAt < slotEnd && b.endsAt > slotStart);
+      const bookedTableIds = new Set(overlapping.filter((b) => b.tableId !== null).map((b) => b.tableId!));
+      const bookedHallIds = new Set(overlapping.filter((b) => b.tableId === null).map((b) => b.hallId!));
 
-      const availableTables = tables.filter((t) => !bookedTableIds.includes(t.id));
+      const availableTables = tables.filter((t) => !bookedTableIds.has(t.id) && !bookedHallIds.has(t.hallId));
 
       return {
         time: slot,
@@ -626,7 +642,9 @@ export class BookingsService {
     });
 
     return tables.map((t) => {
-      const tableBookings = bookings.filter((b) => b.tableId === t.id);
+      const tableBookings = bookings.filter(
+        (b) => b.tableId === t.id || (b.tableId === null && b.hallId === t.hallId),
+      );
 
       // Активная бронь прямо сейчас
       const activeBooking = tableBookings.find(
