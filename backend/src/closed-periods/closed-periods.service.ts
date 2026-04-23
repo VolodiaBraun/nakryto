@@ -23,6 +23,8 @@ export class ClosedPeriodsService {
         startsAt: new Date(dto.startsAt),
         endsAt: new Date(dto.endsAt),
         reason: dto.reason,
+        guestName: dto.guestName,
+        guestPhone: dto.guestPhone,
       },
     });
   }

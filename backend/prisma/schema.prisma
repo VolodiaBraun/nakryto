@@ -188,16 +188,24 @@ enum TableShape {
   RECTANGLE
 }
 
+enum BookingType {
+  STANDARD
+  HALL
+  GROUP
+}
+
 // ─── Брони ───────────────────────────────────────────────────────────────────
 
 model Booking {
   id           String        @id @default(uuid())
   restaurantId String
   restaurant   Restaurant    @relation(fields: [restaurantId], references: [id])
-  tableId      String
-  table        Table         @relation(fields: [tableId], references: [id])
+  tableId      String?
+  table        Table?        @relation(fields: [tableId], references: [id])
   hallId       String
   hall         Hall          @relation(fields: [hallId], references: [id])
+  bookingType  BookingType   @default(STANDARD)
+  groupId      String?
   guestName      String
   guestPhone     String
   guestEmail     String?
@@ -254,6 +262,8 @@ model ClosedPeriod {
   startsAt     DateTime
   endsAt       DateTime
   reason       String?
+  guestName    String?
+  guestPhone   String?
   createdAt    DateTime   @default(now())
 
   @@map("closed_periods")

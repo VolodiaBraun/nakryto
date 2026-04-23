@@ -12,6 +12,8 @@ import { TelegramService } from '../telegram/telegram.service';
 import { MaxService } from '../max/max.service';
 import { AuditLogService } from '../audit-log/audit-log.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { CreateHallBookingDto } from './dto/create-hall-booking.dto';
+import { CreateGroupBookingDto } from './dto/create-group-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { ListBookingsDto } from './dto/list-bookings.dto';
@@ -33,8 +35,9 @@ export class BookingsService {
     slug: string,
     startsAt: Date,
     event: 'booking_created' | 'booking_cancelled',
-    tableId: string,
+    tableId: string | null,
   ) {
+    if (!tableId) return;
     try {
       const date = startsAt.toISOString().split('T')[0];
       this.gateway.notifyTableStatusChanged(slug, date, event, {
@@ -47,7 +50,7 @@ export class BookingsService {
   }
 
   async findAll(restaurantId: string, filters: ListBookingsDto) {
-    const { date, hallId, status, search, page = 1, limit = 50 } = filters;
+    const { date, dateFrom, dateTo, hallId, status, search, page = 1, limit = 50 } = filters;
     const skip = (page - 1) * limit;
 
     const where: any = { restaurantId };
@@ -58,6 +61,18 @@ export class BookingsService {
       const end = new Date(date);
       end.setHours(23, 59, 59, 999);
       where.startsAt = { gte: start, lte: end };
+    } else if (dateFrom || dateTo) {
+      where.startsAt = {};
+      if (dateFrom) {
+        const from = new Date(dateFrom);
+        from.setHours(0, 0, 0, 0);
+        where.startsAt.gte = from;
+      }
+      if (dateTo) {
+        const to = new Date(dateTo);
+        to.setHours(23, 59, 59, 999);
+        where.startsAt.lte = to;
+      }
     }
 
     if (hallId) where.hallId = hallId;
@@ -162,6 +177,19 @@ export class BookingsService {
 
     if (conflict) {
       throw new ConflictException('Выбранное время уже занято для этого стола');
+    }
+
+    // Проверяем бронь на весь зал
+    const hallBookingConflict = await this.prisma.booking.findFirst({
+      where: {
+        hallId: table.hallId,
+        bookingType: 'HALL',
+        status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+        OR: [{ startsAt: { lt: endsAt }, endsAt: { gt: startsAt } }],
+      },
+    });
+    if (hallBookingConflict) {
+      throw new ConflictException('Зал закрыт на это время (корпоративное мероприятие)');
     }
 
     // Проверяем закрытые периоды
@@ -340,6 +368,142 @@ export class BookingsService {
       meta: { token },
     });
     return cancelled;
+  }
+
+  async createHallBooking(restaurantId: string, dto: CreateHallBookingDto) {
+    const hall = await this.prisma.hall.findFirst({
+      where: { id: dto.hallId, restaurantId, isActive: true },
+    });
+    if (!hall) throw new NotFoundException('Зал не найден');
+
+    const startsAt = new Date(dto.startsAt);
+    const endsAt = new Date(dto.endsAt);
+
+    // Конфликт: любая бронь в этом зале в это время
+    const tableConflict = await this.prisma.booking.findFirst({
+      where: {
+        hallId: dto.hallId,
+        status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+        OR: [{ startsAt: { lt: endsAt }, endsAt: { gt: startsAt } }],
+      },
+    });
+    if (tableConflict) throw new ConflictException('В зале есть пересекающиеся брони на это время');
+
+    // Конфликт: закрытый период на весь ресторан
+    const closedPeriod = await this.prisma.closedPeriod.findFirst({
+      where: {
+        restaurantId,
+        tableId: null,
+        hallId: null,
+        startsAt: { lte: endsAt },
+        endsAt: { gte: startsAt },
+      },
+    });
+    if (closedPeriod) throw new BadRequestException('Ресторан закрыт в выбранное время');
+
+    const booking = await this.prisma.booking.create({
+      data: {
+        restaurantId,
+        hallId: dto.hallId,
+        tableId: null,
+        bookingType: 'HALL',
+        guestName: dto.guestName,
+        guestPhone: dto.guestPhone,
+        guestCount: dto.guestCount,
+        startsAt,
+        endsAt,
+        status: 'CONFIRMED',
+        source: 'MANUAL',
+        notes: dto.notes,
+        consentGiven: true,
+        consentAt: new Date(),
+      },
+      include: { hall: true, restaurant: true },
+    });
+
+    this.notifications.notifyStaffNewBooking(booking.id).catch(() => {});
+    this.auditLog.log({
+      action: 'booking.create_hall',
+      actorType: 'user',
+      restaurantId,
+      entityId: booking.id,
+      status: 'ok',
+      meta: { hallId: dto.hallId, guestName: dto.guestName, startsAt: dto.startsAt },
+    });
+    return booking;
+  }
+
+  async createGroupBooking(restaurantId: string, dto: CreateGroupBookingDto) {
+    const startsAt = new Date(dto.startsAt);
+    const endsAt = new Date(dto.endsAt);
+
+    // Verify all tables belong to this restaurant
+    const tables = await this.prisma.table.findMany({
+      where: { id: { in: dto.tableIds }, hall: { restaurantId }, isActive: true },
+      include: { hall: true },
+    });
+    if (tables.length !== dto.tableIds.length) {
+      throw new NotFoundException('Один или несколько столов не найдены');
+    }
+
+    // Check conflicts for each table
+    for (const table of tables) {
+      const conflict = await this.prisma.booking.findFirst({
+        where: {
+          tableId: table.id,
+          status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+          OR: [{ startsAt: { lt: endsAt }, endsAt: { gt: startsAt } }],
+        },
+      });
+      if (conflict) throw new ConflictException(`Стол ${table.label} уже занят на это время`);
+
+      const hallBookingConflict = await this.prisma.booking.findFirst({
+        where: {
+          hallId: table.hallId,
+          bookingType: 'HALL',
+          status: { notIn: ['CANCELLED', 'NO_SHOW'] },
+          OR: [{ startsAt: { lt: endsAt }, endsAt: { gt: startsAt } }],
+        },
+      });
+      if (hallBookingConflict) throw new ConflictException(`Зал закрыт на это время (корпоративное мероприятие)`);
+    }
+
+    const groupId = require('crypto').randomUUID();
+    const bookings = await Promise.all(
+      tables.map((table) =>
+        this.prisma.booking.create({
+          data: {
+            restaurantId,
+            hallId: table.hallId,
+            tableId: table.id,
+            bookingType: 'GROUP',
+            groupId,
+            guestName: dto.guestName,
+            guestPhone: dto.guestPhone,
+            guestCount: Math.ceil(dto.guestCount / tables.length),
+            startsAt,
+            endsAt,
+            status: 'CONFIRMED',
+            source: 'MANUAL',
+            notes: dto.notes,
+            consentGiven: true,
+            consentAt: new Date(),
+          },
+          include: { table: true, hall: true },
+        }),
+      ),
+    );
+
+    this.notifications.notifyStaffNewBooking(bookings[0].id).catch(() => {});
+    this.auditLog.log({
+      action: 'booking.create_group',
+      actorType: 'user',
+      restaurantId,
+      entityId: groupId,
+      status: 'ok',
+      meta: { tableIds: dto.tableIds, guestName: dto.guestName, startsAt: dto.startsAt },
+    });
+    return { groupId, bookings };
   }
 
   // Получить доступные слоты на дату
