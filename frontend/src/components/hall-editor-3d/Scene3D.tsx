@@ -49,11 +49,30 @@ function CameraSetup({ polygon, viewOnly }: { polygon: Vec2[]; viewOnly: boolean
 
 // ─── Textured materials (Suspense-safe) ───────────────────────────────────────
 
-function FloorTextureMaterial({ url }: { url: string }) {
+function FloorTextureMaterial({ url, repeat }: { url: string; repeat: { x: number; y: number } }) {
   const texture = useTexture(url);
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
-  texture.repeat.set(3, 3);
+  texture.repeat.set(repeat.x, repeat.y);
   return <meshStandardMaterial map={texture} roughness={0.85} side={THREE.DoubleSide} />;
+}
+
+function WallTextureMaterial({ url, selected }: { url: string; selected: boolean }) {
+  const texture = useTexture(url);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  return (
+    <meshStandardMaterial map={texture} roughness={0.9}
+      emissive={selected ? '#aaccff' : '#000000'} emissiveIntensity={selected ? 0.12 : 0} />
+  );
+}
+
+function TableIconLayer({ url, size }: { url: string; size: number }) {
+  const texture = useTexture(url);
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]}>
+      <planeGeometry args={[size, size]} />
+      <meshBasicMaterial map={texture} transparent depthWrite={false} />
+    </mesh>
+  );
 }
 
 function ElementTextureMaterial({ url, transparent, opacity, emissive, emissiveIntensity }: {
@@ -68,7 +87,7 @@ function ElementTextureMaterial({ url, transparent, opacity, emissive, emissiveI
 
 // ─── Floor ────────────────────────────────────────────────────────────────────
 
-function Floor({ polygon, color, textureUrl }: { polygon: Vec2[]; color: string; textureUrl?: string }) {
+function Floor({ polygon, color, textureUrl, textureRepeat }: { polygon: Vec2[]; color: string; textureUrl?: string; textureRepeat?: { x: number; y: number } }) {
   const geometry = useMemo(() => {
     if (polygon.length < 3) return null;
     const shape = new THREE.Shape();
@@ -85,7 +104,7 @@ function Floor({ polygon, color, textureUrl }: { polygon: Vec2[]; color: string;
     <mesh geometry={geometry} rotation={[Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
       {textureUrl ? (
         <Suspense fallback={<meshStandardMaterial color={color} roughness={0.85} side={THREE.DoubleSide} />}>
-          <FloorTextureMaterial url={textureUrl} />
+          <FloorTextureMaterial url={textureUrl} repeat={textureRepeat ?? { x: 3, y: 3 }} />
         </Suspense>
       ) : (
         <meshStandardMaterial color={color} roughness={0.85} side={THREE.DoubleSide} />
@@ -102,41 +121,57 @@ interface WallProps {
   p1: Vec2; p2: Vec2;
   wallHeight: number; wallThickness: number;
   color: string; wallIndex: number;
-  interactive: boolean;
+  textureUrl?: string;
+  interactive: boolean; // addWallElement mode
+  selectable: boolean;  // view mode — click to select wall
+  selected: boolean;
   onWallClick?: (wallIndex: number, offsetAlong: number, heightFromFloor: number) => void;
+  onWallSelect?: (wallIndex: number) => void;
 }
 
-function Wall({ p1, p2, wallHeight, wallThickness, color, wallIndex, interactive, onWallClick }: WallProps) {
+function Wall({ p1, p2, wallHeight, wallThickness, color, wallIndex, textureUrl, interactive, selectable, selected, onWallClick, onWallSelect }: WallProps) {
   const [hovered, setHovered] = useState(false);
   const len = wallLength(p1, p2);
   const cx = (p1.x + p2.x) / 2, cz = (p1.y + p2.y) / 2;
   const angle = wallAngle(p1, p2);
-  // Start wall bottom at Y=0.002 to clear the floor
   const posY = wallHeight / 2 + 0.002;
 
   const handleClick = useCallback(
     (e: ThreeEvent<MouseEvent>) => {
-      if (!interactive || !onWallClick) return;
       e.stopPropagation();
-      if (!e.face || Math.abs(e.face.normal.z) < 0.5) return; // only large wall faces
-      const { offsetAlong, heightFromFloor } = hitToWallUV(e.point, p1, p2, wallHeight);
-      onWallClick(wallIndex, offsetAlong, heightFromFloor);
+      if (interactive && onWallClick) {
+        if (!e.face || Math.abs(e.face.normal.z) < 0.5) return;
+        const { offsetAlong, heightFromFloor } = hitToWallUV(e.point, p1, p2, wallHeight);
+        onWallClick(wallIndex, offsetAlong, heightFromFloor);
+      } else if (selectable && onWallSelect) {
+        onWallSelect(wallIndex);
+      }
     },
-    [p1, p2, wallHeight, wallIndex, interactive, onWallClick],
+    [p1, p2, wallHeight, wallIndex, interactive, selectable, onWallClick, onWallSelect],
   );
+
+  const baseColor = selected ? '#c8deff'
+    : hovered && interactive ? '#d8d4c4'
+    : hovered && selectable ? '#ece8da'
+    : color;
 
   return (
     <mesh
       position={[cx, posY, cz]}
       rotation={[0, angle, 0]}
       onClick={handleClick}
-      onPointerOver={() => interactive && setHovered(true)}
+      onPointerOver={() => (interactive || selectable) && setHovered(true)}
       onPointerOut={() => setHovered(false)}
       receiveShadow
-      // castShadow intentionally disabled — prevents triangular artifacts on the floor
     >
       <boxGeometry args={[len, wallHeight, wallThickness]} />
-      <meshStandardMaterial color={hovered && interactive ? '#d8d4c4' : color} roughness={0.9} />
+      {textureUrl ? (
+        <Suspense fallback={<meshStandardMaterial color={baseColor} roughness={0.9} />}>
+          <WallTextureMaterial url={textureUrl} selected={selected} />
+        </Suspense>
+      ) : (
+        <meshStandardMaterial color={baseColor} roughness={0.9} />
+      )}
     </mesh>
   );
 }
@@ -274,18 +309,24 @@ function WallElementMesh({ element, polygon, wallHeight, wallThickness, selected
 
 // ─── Table ────────────────────────────────────────────────────────────────────
 
-function Table3D({ table, scale, positionOverride, selected, onSelect, onDragStart }: {
+function Table3D({ table, scale, positionOverride, sizeOverride, iconUrl, selected, onSelect, onDragStart }: {
   table: Table; scale: number;
   positionOverride?: { x: number; z: number };
+  sizeOverride?: { w: number; h: number };
+  iconUrl?: string;
   selected: boolean;
   onSelect: () => void;
   onDragStart: () => void;
 }) {
   const x = positionOverride ? positionOverride.x : table.positionX * scale;
   const z = positionOverride ? positionOverride.z : table.positionY * scale;
-  const w = (table.width || 100) * scale;
-  const h = (table.height || 100) * scale;
+  const w = sizeOverride ? sizeOverride.w : (table.width || 100) * scale;
+  const h = sizeOverride ? sizeOverride.h : (table.height || 100) * scale;
   const H = 0.08;
+  const tableMat = (
+    <meshStandardMaterial color={selected ? '#a07040' : '#7a5c38'} roughness={0.6}
+      emissive={selected ? '#ff9900' : '#000000'} emissiveIntensity={selected ? 0.15 : 0} />
+  );
 
   return (
     <group position={[x, 0, z]}>
@@ -294,19 +335,27 @@ function Table3D({ table, scale, positionOverride, selected, onSelect, onDragSta
           onPointerDown={(e) => { e.stopPropagation(); if (selected) onDragStart(); else onSelect(); }}
         >
           <cylinderGeometry args={[Math.min(w, h) / 2, Math.min(w, h) / 2, H, 24]} />
-          <meshStandardMaterial color={selected ? '#a07040' : '#7a5c38'} roughness={0.6}
-            emissive={selected ? '#ff9900' : '#000000'} emissiveIntensity={selected ? 0.15 : 0} />
+          {tableMat}
         </mesh>
       ) : (
         <mesh position={[0, H / 2, 0]} castShadow receiveShadow
           onPointerDown={(e) => { e.stopPropagation(); if (selected) onDragStart(); else onSelect(); }}
         >
           <boxGeometry args={[w, H, h]} />
-          <meshStandardMaterial color={selected ? '#a07040' : '#7a5c38'} roughness={0.6}
-            emissive={selected ? '#ff9900' : '#000000'} emissiveIntensity={selected ? 0.15 : 0} />
+          {tableMat}
         </mesh>
       )}
-      {/* Selection ring */}
+
+      {/* Иконка поверх стола */}
+      {iconUrl && (
+        <group position={[0, H + 0.003, 0]}>
+          <Suspense fallback={null}>
+            <TableIconLayer url={iconUrl} size={Math.min(w, h) * 0.75} />
+          </Suspense>
+        </group>
+      )}
+
+      {/* Кольцо выделения */}
       {selected && (
         <mesh position={[0, 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <ringGeometry args={[Math.max(w, h) / 2 + 0.05, Math.max(w, h) / 2 + 0.2, 32]} />
@@ -397,6 +446,7 @@ export interface Scene3DProps {
   mode: 'draw' | 'addWallElement' | 'view';
   selectedElement: string | null;
   selectedTable: string | null;
+  selectedWall: number | null;
   pendingWallElement: WallElementType | null;
   viewOnly?: boolean;
   onPolygonClose: (polygon: Vec2[]) => void;
@@ -405,11 +455,12 @@ export interface Scene3DProps {
   onElementUpdate: (id: string, patch: Partial<Omit<WallElement, 'id' | 'type' | 'wallIndex'>>) => void;
   onTableSelect: (id: string | null) => void;
   onTableMove: (id: string, x: number, z: number) => void;
+  onWallSelect: (index: number | null) => void;
 }
 
 export function Scene3D({
-  plan, tables, mode, selectedElement, selectedTable, pendingWallElement, viewOnly = false,
-  onPolygonClose, onWallElementAdd, onElementSelect, onElementUpdate, onTableSelect, onTableMove,
+  plan, tables, mode, selectedElement, selectedTable, selectedWall, pendingWallElement, viewOnly = false,
+  onPolygonClose, onWallElementAdd, onElementSelect, onElementUpdate, onTableSelect, onTableMove, onWallSelect,
 }: Scene3DProps) {
   const [draggingWallEl, setDraggingWallEl] = useState<{ id: string; wallIndex: number } | null>(null);
   const [draggingTable, setDraggingTable] = useState<string | null>(null);
@@ -442,7 +493,7 @@ export function Scene3D({
       shadows={false}
       camera={{ fov: 50, near: 0.1, far: 500, position: [5, 10, 14] }}
       style={{ background: '#1a1a2e' }}
-      onPointerMissed={() => { if (!draggingWallEl && !draggingTable) { onElementSelect(null); onTableSelect(null); } }}
+      onPointerMissed={() => { if (!draggingWallEl && !draggingTable) { onElementSelect(null); onTableSelect(null); onWallSelect(null); } }}
     >
       <CameraSetup polygon={plan.polygon} viewOnly={viewOnly} />
       <SceneLights settings={lights} />
@@ -464,7 +515,8 @@ export function Scene3D({
 
       {isClosed && (
         <>
-          <Floor polygon={plan.polygon} color={plan.floorColor} textureUrl={plan.floorTextureUrl} />
+          <Floor polygon={plan.polygon} color={plan.floorColor}
+            textureUrl={plan.floorTextureUrl} textureRepeat={plan.floorTextureRepeat} />
 
           {/* Walls */}
           {plan.polygon.map((p1, i) => {
@@ -472,7 +524,12 @@ export function Scene3D({
             return (
               <Wall key={i} p1={p1} p2={p2} wallHeight={plan.wallHeight} wallThickness={wt}
                 color={plan.wallColor} wallIndex={i}
-                interactive={mode === 'addWallElement'} onWallClick={handleWallClick} />
+                textureUrl={plan.wallTextures?.[i]}
+                interactive={mode === 'addWallElement'}
+                selectable={mode === 'view'}
+                selected={selectedWall === i}
+                onWallClick={handleWallClick}
+                onWallSelect={onWallSelect} />
             );
           })}
 
@@ -509,6 +566,8 @@ export function Scene3D({
           {tables.map((t) => (
             <Table3D key={t.id} table={t} scale={0.01}
               positionOverride={plan.tablePositions?.[t.id]}
+              sizeOverride={plan.tableSizeOverrides?.[t.id]}
+              iconUrl={plan.tableIcons?.[t.id]}
               selected={selectedTable === t.id}
               onSelect={() => onTableSelect(t.id === selectedTable ? null : t.id)}
               onDragStart={() => setDraggingTable(t.id)} />

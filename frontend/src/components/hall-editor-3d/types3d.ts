@@ -31,6 +31,10 @@ export interface Hall3DPlan {
   lightSettings: LightSettings;
   tablePositions: Record<string, { x: number; z: number }>; // overrides per table.id
   floorTextureUrl?: string;
+  floorTextureRepeat?: { x: number; y: number };
+  wallTextures?: Record<number, string>; // per-wall texture URL, keyed by wallIndex
+  tableIcons?: Record<string, string>; // per-table icon URL, keyed by table.id
+  tableSizeOverrides?: Record<string, { w: number; h: number }>; // per-table size in meters
 }
 
 export const DEFAULT_PLAN: Hall3DPlan = {

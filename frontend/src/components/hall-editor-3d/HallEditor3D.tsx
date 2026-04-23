@@ -46,8 +46,11 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
   const [selectedElement, setSelectedElement] = useState<string | null>(null);
   const [selectedTable, setSelectedTable] = useState<string | null>(null);
   const [pendingWallElement, setPendingWallElement] = useState<WallElementType | null>(null);
+  const [selectedWall, setSelectedWall] = useState<number | null>(null);
   const [uploadingEl, setUploadingEl] = useState(false);
   const [uploadingFloor, setUploadingFloor] = useState(false);
+  const [uploadingWall, setUploadingWall] = useState(false);
+  const [uploadingTableIcon, setUploadingTableIcon] = useState(false);
 
   const savePlan = useCallback((next: Hall3DPlan) => {
     setPlan(next);
@@ -100,11 +103,17 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
     });
   }, [hall.id]);
 
+  const handleWallSelect = useCallback((index: number | null) => {
+    setSelectedWall(index);
+    if (index !== null) { setSelectedElement(null); setSelectedTable(null); }
+  }, []);
+
   const startAddWallElement = useCallback((type: WallElementType) => {
     setPendingWallElement(type);
     setMode('addWallElement');
     setSelectedElement(null);
     setSelectedTable(null);
+    setSelectedWall(null);
   }, []);
 
   const handleReset = useCallback(() => {
@@ -154,6 +163,47 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
             >👁 Просмотр / вращение</button>
           )}
         </div>
+
+        {/* Выбранная стена */}
+        {selectedWall !== null && isClosed && (
+          <div className="px-4 py-3 border-b border-gray-700 space-y-2">
+            <div className="text-xs text-gray-500 uppercase tracking-wide">
+              Стена {selectedWall + 1} / {plan.polygon.length}
+            </div>
+            {plan.wallTextures?.[selectedWall] ? (
+              <div className="flex items-center gap-2">
+                <img src={plan.wallTextures[selectedWall]} alt="" className="w-9 h-9 rounded object-cover border border-gray-600 flex-shrink-0" />
+                <button className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                  onClick={() => {
+                    const { [selectedWall]: _, ...rest } = plan.wallTextures ?? {};
+                    savePlan({ ...plan, wallTextures: rest });
+                  }}>
+                  Убрать текстуру
+                </button>
+              </div>
+            ) : null}
+            <label className="cursor-pointer">
+              <span className={`inline-block text-xs px-2 py-1 rounded transition-colors ${uploadingWall ? 'bg-gray-600 text-gray-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-200'}`}>
+                {uploadingWall ? '⏳ Загрузка...' : '📷 Текстура стены'}
+              </span>
+              <input type="file" accept="image/*" className="hidden" disabled={uploadingWall}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setUploadingWall(true);
+                  try {
+                    const url = await uploadsApi.uploadPresignOnly(hall.id, file);
+                    savePlan({ ...plan, wallTextures: { ...plan.wallTextures, [selectedWall]: url } });
+                  } catch {}
+                  finally { setUploadingWall(false); e.target.value = ''; }
+                }} />
+            </label>
+            <button className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+              onClick={() => setSelectedWall(null)}>
+              × Снять выделение
+            </button>
+          </div>
+        )}
 
         {/* Wall elements */}
         {isClosed && (
@@ -281,6 +331,82 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
               <div className="text-xs text-gray-500 mb-2">Позиция из 2D редактора</div>
             )}
             <div className="text-xs text-blue-400 mb-2">Выделите и тащите для перемещения</div>
+
+            {/* Размер стола */}
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Размер в 3D, м</div>
+              <div className="flex gap-1.5">
+                <label className="flex-1 flex flex-col gap-0.5">
+                  <span className="text-xs text-gray-400">Ширина</span>
+                  <input type="number" step="0.1" min="0.1"
+                    value={parseFloat((plan.tableSizeOverrides?.[selectedTableObj.id]?.w ?? (selectedTableObj.width || 100) * 0.01).toFixed(1))}
+                    className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 outline-none"
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v) && v > 0) {
+                        const prev = plan.tableSizeOverrides?.[selectedTableObj.id];
+                        savePlan({ ...plan, tableSizeOverrides: { ...plan.tableSizeOverrides, [selectedTableObj.id]: { w: v, h: prev?.h ?? (selectedTableObj.height || 100) * 0.01 } } });
+                      }
+                    }} />
+                </label>
+                <label className="flex-1 flex flex-col gap-0.5">
+                  <span className="text-xs text-gray-400">Глубина</span>
+                  <input type="number" step="0.1" min="0.1"
+                    value={parseFloat((plan.tableSizeOverrides?.[selectedTableObj.id]?.h ?? (selectedTableObj.height || 100) * 0.01).toFixed(1))}
+                    className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 outline-none"
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value);
+                      if (!isNaN(v) && v > 0) {
+                        const prev = plan.tableSizeOverrides?.[selectedTableObj.id];
+                        savePlan({ ...plan, tableSizeOverrides: { ...plan.tableSizeOverrides, [selectedTableObj.id]: { w: prev?.w ?? (selectedTableObj.width || 100) * 0.01, h: v } } });
+                      }
+                    }} />
+                </label>
+              </div>
+              {plan.tableSizeOverrides?.[selectedTableObj.id] && (
+                <button className="text-xs text-gray-500 hover:text-gray-300 mt-1 transition-colors"
+                  onClick={() => {
+                    const { [selectedTableObj.id]: _, ...rest } = plan.tableSizeOverrides ?? {};
+                    savePlan({ ...plan, tableSizeOverrides: rest });
+                  }}>
+                  ↩ Сбросить размер
+                </button>
+              )}
+            </div>
+
+            {/* Иконка стола */}
+            <div>
+              <div className="text-xs text-gray-500 mb-1">Иконка стола</div>
+              {plan.tableIcons?.[selectedTableObj.id] ? (
+                <div className="flex items-center gap-2 mb-1.5">
+                  <img src={plan.tableIcons[selectedTableObj.id]} alt="" className="w-9 h-9 rounded object-cover border border-gray-600 flex-shrink-0" />
+                  <button className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                    onClick={() => {
+                      const { [selectedTableObj.id]: _, ...rest } = plan.tableIcons ?? {};
+                      savePlan({ ...plan, tableIcons: rest });
+                    }}>
+                    Убрать
+                  </button>
+                </div>
+              ) : null}
+              <label className="cursor-pointer">
+                <span className={`inline-block text-xs px-2 py-1 rounded transition-colors ${uploadingTableIcon ? 'bg-gray-600 text-gray-400' : 'bg-gray-700 hover:bg-gray-600 text-gray-200'}`}>
+                  {uploadingTableIcon ? '⏳ Загрузка...' : '📷 Загрузить иконку'}
+                </span>
+                <input type="file" accept="image/*" className="hidden" disabled={uploadingTableIcon}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setUploadingTableIcon(true);
+                    try {
+                      const url = await uploadsApi.uploadPresignOnly(hall.id, file);
+                      savePlan({ ...plan, tableIcons: { ...plan.tableIcons, [selectedTableObj.id]: url } });
+                    } catch {}
+                    finally { setUploadingTableIcon(false); e.target.value = ''; }
+                  }} />
+              </label>
+            </div>
+
             {hasTableOverride && (
               <button className="w-full px-3 py-2 rounded bg-gray-700 hover:bg-gray-600 transition-colors text-xs"
                 onClick={() => handleResetTablePosition(selectedTableObj.id)}>
@@ -332,6 +458,33 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
                 </label>
               )}
             </div>
+            {plan.floorTextureUrl && (
+              <div>
+                <div className="text-xs text-gray-500 mb-1">Повтор текстуры пола</div>
+                <div className="flex gap-1.5">
+                  <label className="flex-1 flex flex-col gap-0.5">
+                    <span className="text-xs text-gray-400">По X</span>
+                    <input type="number" step="0.5" min="0.5" max="20"
+                      value={plan.floorTextureRepeat?.x ?? 3}
+                      className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 outline-none"
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!isNaN(v) && v > 0) savePlan({ ...plan, floorTextureRepeat: { x: v, y: plan.floorTextureRepeat?.y ?? 3 } });
+                      }} />
+                  </label>
+                  <label className="flex-1 flex flex-col gap-0.5">
+                    <span className="text-xs text-gray-400">По Y</span>
+                    <input type="number" step="0.5" min="0.5" max="20"
+                      value={plan.floorTextureRepeat?.y ?? 3}
+                      className="w-full bg-gray-700 rounded px-2 py-1 text-xs text-white border border-gray-600 outline-none"
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value);
+                        if (!isNaN(v) && v > 0) savePlan({ ...plan, floorTextureRepeat: { x: plan.floorTextureRepeat?.x ?? 3, y: v } });
+                      }} />
+                  </label>
+                </div>
+              </div>
+            )}
             <label className="flex flex-col gap-1">
               <span className="text-xs text-gray-400">Стены</span>
               <input type="color" value={plan.wallColor}
@@ -432,13 +585,15 @@ export function HallEditor3D({ hall }: { hall: Hall }) {
           mode={mode}
           selectedElement={selectedElement}
           selectedTable={selectedTable}
+          selectedWall={selectedWall}
           pendingWallElement={pendingWallElement}
           onPolygonClose={handlePolygonClose}
           onWallElementAdd={handleWallElementAdd}
-          onElementSelect={(id) => { setSelectedElement(id); if (id) setSelectedTable(null); }}
+          onElementSelect={(id) => { setSelectedElement(id); if (id) { setSelectedTable(null); setSelectedWall(null); } }}
           onElementUpdate={handleElementUpdate}
-          onTableSelect={(id) => { setSelectedTable(id); if (id) setSelectedElement(null); }}
+          onTableSelect={(id) => { setSelectedTable(id); if (id) { setSelectedElement(null); setSelectedWall(null); } }}
           onTableMove={handleTableMove}
+          onWallSelect={handleWallSelect}
         />
       </div>
     </div>
