@@ -260,7 +260,8 @@ function WallElementMesh({ element, polygon, wallHeight, wallThickness, selected
   const meta = WALL_ELEMENT_META[element.type];
 
   return (
-    <group>
+    // onClick на группе блокирует всплытие к стене (Wall.onClick) при клике на любой дочерний меш
+    <group onClick={(e) => e.stopPropagation()}>
       {element.type === 'window' && (
         <mesh position={[wx, wy, wz]} rotation={[0, angle, 0]}>
           <boxGeometry args={[element.width + 0.1, element.height + 0.1, depth]} />
