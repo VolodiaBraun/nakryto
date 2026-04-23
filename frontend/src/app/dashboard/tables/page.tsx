@@ -102,7 +102,7 @@ export default function TablesPage() {
   // Редактирование брони
   const [editModal, setEditModal] = useState(false);
   const [editBooking, setEditBooking] = useState<any>(null);
-  const [editForm, setEditForm] = useState({ date: '', time: '', tableId: '', duration: 120 });
+  const [editForm, setEditForm] = useState({ date: '', time: '', tableId: '', duration: 120, notes: '' });
 
   // ─── Запросы ───────────────────────────────────────────────────────────────
 
@@ -221,6 +221,7 @@ export default function TablesPage() {
       time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
       tableId: booking.tableId,
       duration: Math.round((e.getTime() - d.getTime()) / 60000),
+      notes: booking.notes ?? '',
     });
     setEditModal(true);
   };
@@ -238,6 +239,7 @@ export default function TablesPage() {
         tableId: editForm.tableId || undefined,
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
+        notes: editForm.notes,
       },
     });
   };
@@ -299,7 +301,7 @@ export default function TablesPage() {
             onClick={() => setGroupModal(true)}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            + Зал / Группа столов
+            + Добавить бронь зала/группы столов
           </button>
           <button
             onClick={() => setMassModal(true)}
@@ -658,6 +660,17 @@ export default function TablesPage() {
                   <option key={t.id} value={t.id}>Стол {t.label} ({t.minGuests}–{t.maxGuests} гостей)</option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Комментарий / пожелания</label>
+              <input
+                type="text"
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                placeholder="Пожелания, повод..."
+                className="input text-sm"
+              />
             </div>
 
             <div className="flex gap-3 pt-1">

@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { bookingsApi } from '@/lib/api';
+import { bookingsApi, hallsApi } from '@/lib/api';
 import { formatDateTime, BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS } from '@/lib/utils';
 import { cn } from '@/lib/utils';
 import type { Booking, BookingStatus } from '@/types';
@@ -27,6 +27,14 @@ const FILTERS = [
   { label: 'Отменены', value: 'CANCELLED' },
 ];
 
+const snapTo5 = (timeStr: string) => {
+  if (!timeStr) return timeStr;
+  const [h, m] = timeStr.split(':').map(Number);
+  const snapped = Math.round(m / 5) * 5;
+  if (snapped === 60) return `${String(h + 1).padStart(2, '0')}:00`;
+  return `${String(h).padStart(2, '0')}:${String(snapped).padStart(2, '0')}`;
+};
+
 export default function BookingsPage() {
   const qc = useQueryClient();
   const [statusFilter, setStatusFilter] = useState('');
@@ -41,6 +49,11 @@ export default function BookingsPage() {
   const [showNewBooking, setShowNewBooking] = useState(false);
   const [showMassClose, setShowMassClose] = useState(false);
 
+  // Edit modal state
+  const [editModal, setEditModal] = useState(false);
+  const [editBooking, setEditBooking] = useState<any>(null);
+  const [editForm, setEditForm] = useState({ date: '', time: '', duration: 120, tableId: '', notes: '' });
+
   const params: Record<string, string> = {};
   if (statusFilter) params.status = statusFilter;
   if (dateFilter) params.date = dateFilter;
@@ -52,6 +65,21 @@ export default function BookingsPage() {
     refetchInterval: 10000,
   });
 
+  const { data: halls = [] } = useQuery<any[]>({
+    queryKey: ['halls'],
+    queryFn: () => hallsApi.getAll() as any,
+  });
+
+  const allTables = useMemo(() =>
+    (halls as any[])
+      .flatMap((h) => (h.tables || []).map((t: any) => ({ ...t, hallName: h.name })))
+      .sort((a, b) => {
+        const na = parseInt(a.label), nb = parseInt(b.label);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return a.label.localeCompare(b.label);
+      }),
+  [halls]);
+
   const statusMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: BookingStatus }) =>
       bookingsApi.updateStatus(id, { status }),
@@ -61,7 +89,49 @@ export default function BookingsPage() {
     },
   });
 
+  const updateBooking = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: any }) => bookingsApi.update(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['bookings'] });
+      setEditModal(false);
+      setEditBooking(null);
+    },
+  });
+
   const bookings: Booking[] = data?.items || [];
+
+  const openEditModal = (booking: any) => {
+    const d = new Date(booking.startsAt);
+    const e = new Date(booking.endsAt);
+    setEditBooking(booking);
+    setEditForm({
+      date: d.toISOString().split('T')[0],
+      time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`,
+      duration: Math.round((e.getTime() - d.getTime()) / 60000),
+      tableId: booking.tableId ?? '',
+      notes: booking.notes ?? '',
+    });
+    setSelected(null);
+    setEditModal(true);
+  };
+
+  const handleUpdateBooking = () => {
+    if (!editBooking || !editForm.date || !editForm.time) return;
+    const time = snapTo5(editForm.time);
+    const [h, m] = time.split(':').map(Number);
+    const startsAt = new Date(editForm.date + 'T00:00:00');
+    startsAt.setHours(h, m, 0, 0);
+    const endsAt = new Date(startsAt.getTime() + editForm.duration * 60 * 1000);
+    const payload: any = {
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+      notes: editForm.notes,
+    };
+    if (editBooking.bookingType === 'STANDARD' && editForm.tableId) {
+      payload.tableId = editForm.tableId;
+    }
+    updateBooking.mutate({ id: editBooking.id, data: payload });
+  };
 
   const handlePrint = async () => {
     if (!exportFrom || !exportTo) return;
@@ -74,6 +144,12 @@ export default function BookingsPage() {
     if (booking.bookingType === 'HALL') return `🏛 Весь зал: ${booking.hall?.name ?? ''}`;
     if (booking.bookingType === 'GROUP') return `👥 Группа · ст. ${booking.table?.label ?? ''}`;
     return `${booking.table?.label ?? '?'} · ${booking.hall?.name ?? ''}`;
+  };
+
+  const durationLabel = (min: number) => {
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    return `${h > 0 ? `${h} ч` : ''}${m > 0 ? ` ${m} мин` : ''}`.trim();
   };
 
   return (
@@ -97,7 +173,7 @@ export default function BookingsPage() {
             onClick={() => setShowNewBooking(true)}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
           >
-            + Зал / Группа столов
+            + Добавить бронь зала/группы столов
           </button>
         </div>
       </div>
@@ -181,7 +257,14 @@ export default function BookingsPage() {
                         {BOOKING_STATUS_LABELS[booking.status]}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 whitespace-nowrap">
+                      <button
+                        onClick={() => openEditModal(booking)}
+                        className="text-sm text-gray-500 hover:text-gray-800 mr-3"
+                        title="Редактировать"
+                      >
+                        ✏️
+                      </button>
                       <button
                         onClick={() => setSelected(booking)}
                         className="text-sm text-blue-600 hover:underline"
@@ -245,9 +328,115 @@ export default function BookingsPage() {
               ))}
             </div>
 
-            <button onClick={() => setSelected(null)} className="w-full py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
-              Закрыть
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => openEditModal(selected)}
+                className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50 text-gray-700"
+              >
+                ✏️ Изменить
+              </button>
+              <button onClick={() => setSelected(null)} className="flex-1 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editModal && editBooking && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-gray-900">Изменить бронь</h2>
+                <p className="text-sm text-gray-500 mt-0.5">{editBooking.guestName} · {editBooking.guestPhone}</p>
+              </div>
+              <button onClick={() => setEditModal(false)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">✕</button>
+            </div>
+
+            {updateBooking.isError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-3 py-2 rounded-lg">
+                {(updateBooking.error as any)?.message || 'Ошибка при обновлении'}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Дата</label>
+                <input
+                  type="date"
+                  value={editForm.date}
+                  onChange={(e) => setEditForm({ ...editForm, date: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Время начала</label>
+                <input
+                  type="time"
+                  step="300"
+                  value={editForm.time}
+                  onChange={(e) => setEditForm({ ...editForm, time: e.target.value })}
+                  onBlur={(e) => setEditForm({ ...editForm, time: snapTo5(e.target.value) })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Длительность</label>
+              <select
+                value={editForm.duration}
+                onChange={(e) => setEditForm({ ...editForm, duration: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {[60, 90, 120, 150, 180, 240].map((d) => (
+                  <option key={d} value={d}>{durationLabel(d)}</option>
+                ))}
+              </select>
+            </div>
+
+            {editBooking.bookingType === 'STANDARD' && allTables.length > 0 && (
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Стол</label>
+                <select
+                  value={editForm.tableId}
+                  onChange={(e) => setEditForm({ ...editForm, tableId: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {allTables.map((t: any) => (
+                    <option key={t.id} value={t.id}>
+                      Стол {t.label} · {t.hallName} ({t.minGuests}–{t.maxGuests} гостей)
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Комментарий / пожелания</label>
+              <input
+                type="text"
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                placeholder="Пожелания, повод..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <button onClick={() => setEditModal(false)} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">
+                Отмена
+              </button>
+              <button
+                onClick={handleUpdateBooking}
+                disabled={updateBooking.isPending || !editForm.date || !editForm.time}
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl disabled:opacity-50"
+              >
+                {updateBooking.isPending ? 'Сохраняем...' : 'Сохранить'}
+              </button>
+            </div>
           </div>
         </div>
       )}
