@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { hallsApi, bookingsApi, closedPeriodsApi, publicApi, uploadsApi } from '@/lib/api';
+import NewGroupBookingModal from '@/components/NewGroupBookingModal';
+import MassCloseModal from '@/components/MassCloseModal';
 import PhotoUploader from '@/components/PhotoUploader';
 import { BOOKING_STATUS_LABELS, BOOKING_STATUS_COLORS, formatDate, formatTime } from '@/lib/utils';
 import { useAuth } from '@/context/AuthContext';
@@ -83,9 +85,8 @@ export default function TablesPage() {
     return () => clearInterval(id);
   }, []);
 
-  // Массовое закрытие
   const [massModal, setMassModal] = useState(false);
-  const [massForm, setMassForm] = useState({ startsAt: '', endsAt: '', reason: '', guestName: '', guestPhone: '' });
+  const [groupModal, setGroupModal] = useState(false);
 
   // Добавление периода для стола
   const [periodForm, setPeriodForm] = useState({ startsAt: '', endsAt: '', reason: '' });
@@ -149,10 +150,6 @@ export default function TablesPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['closedPeriods'] }),
   });
 
-  const addMassPeriod = useMutation({
-    mutationFn: (data: any) => closedPeriodsApi.create(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['closedPeriods'] }); setMassModal(false); setMassForm({ startsAt: '', endsAt: '', reason: '', guestName: '', guestPhone: '' }); },
-  });
 
   const createBooking = useMutation({
     mutationFn: (data: any) => bookingsApi.create(data),
@@ -214,17 +211,6 @@ export default function TablesPage() {
     });
   };
 
-  const handleMassClose = () => {
-    if (!massForm.startsAt || !massForm.endsAt) return;
-    addMassPeriod.mutate({
-      tableId: null,
-      startsAt: new Date(massForm.startsAt).toISOString(),
-      endsAt: new Date(massForm.endsAt).toISOString(),
-      reason: massForm.reason || undefined,
-      guestName: massForm.guestName || undefined,
-      guestPhone: massForm.guestPhone || undefined,
-    });
-  };
 
   const openEditModal = (booking: any) => {
     const d = new Date(booking.startsAt);
@@ -308,12 +294,20 @@ export default function TablesPage() {
           <h1 className="text-xl font-bold text-gray-900">Столы</h1>
           <p className="text-sm text-gray-500 mt-0.5">Расписание, брони и доступность</p>
         </div>
-        <button
-          onClick={() => setMassModal(true)}
-          className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 text-sm font-medium rounded-lg border border-red-200 transition-colors"
-        >
-          🚫 Закрыть все столы
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setGroupModal(true)}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            + Зал / Группа столов
+          </button>
+          <button
+            onClick={() => setMassModal(true)}
+            className="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-700 text-sm font-medium rounded-lg border border-red-200 transition-colors"
+          >
+            🚫 Закрыть все столы
+          </button>
+        </div>
       </div>
 
       <div className="flex flex-1 overflow-hidden">
@@ -596,48 +590,8 @@ export default function TablesPage() {
         )}
       </div>
 
-      {/* ── Модал: массовое закрытие ── */}
-      {massModal && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-bold text-gray-900">Закрыть все столы</h2>
-              <button onClick={() => setMassModal(false)} className="text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-            <p className="text-sm text-gray-500">Создаёт закрытый период для всего ресторана (все столы будут недоступны для онлайн-бронирования).</p>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Начало</label>
-                <input type="datetime-local" value={massForm.startsAt} onChange={(e) => setMassForm({ ...massForm, startsAt: e.target.value })} className="input text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Конец</label>
-                <input type="datetime-local" value={massForm.endsAt} onChange={(e) => setMassForm({ ...massForm, endsAt: e.target.value })} className="input text-sm" />
-              </div>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 block mb-1">Причина</label>
-              <input type="text" value={massForm.reason} onChange={(e) => setMassForm({ ...massForm, reason: e.target.value })} placeholder="Санитарный день, ремонт, мероприятие..." className="input text-sm" />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">ФИО клиента (если мероприятие)</label>
-                <input type="text" value={massForm.guestName} onChange={(e) => setMassForm({ ...massForm, guestName: e.target.value })} placeholder="Иван Петров" className="input text-sm" />
-              </div>
-              <div>
-                <label className="text-xs text-gray-500 block mb-1">Телефон клиента</label>
-                <input type="tel" value={massForm.guestPhone} onChange={(e) => setMassForm({ ...massForm, guestPhone: e.target.value })} placeholder="+79001234567" className="input text-sm" />
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <button onClick={() => setMassModal(false)} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">Отмена</button>
-              <button onClick={handleMassClose} disabled={addMassPeriod.isPending || !massForm.startsAt || !massForm.endsAt} className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-xl disabled:opacity-50">
-                Закрыть
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <MassCloseModal open={massModal} onClose={() => setMassModal(false)} />
+      <NewGroupBookingModal open={groupModal} onClose={() => setGroupModal(false)} />
 
       {/* ── Модал: редактировать бронь ── */}
       {editModal && editBooking && (
