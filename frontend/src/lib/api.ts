@@ -265,6 +265,12 @@ export const bookingsApi = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  createHall: (data: any) =>
+    request('/api/restaurant/bookings/hall', { method: 'POST', body: JSON.stringify(data) }),
+
+  createGroup: (data: any) =>
+    request('/api/restaurant/bookings/group', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // ─── Closed Periods ───────────────────────────────────────────────────────────

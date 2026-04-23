@@ -211,13 +211,17 @@ export type BookingStatus =
 
 export type BookingSource = 'ONLINE' | 'PHONE' | 'MANUAL';
 
+export type BookingType = 'STANDARD' | 'HALL' | 'GROUP';
+
 export interface Booking {
   id: string;
   restaurantId: string;
-  tableId: string;
+  tableId: string | null;
   hallId: string;
-  table: Table;
+  table: Table | null;
   hall: Hall;
+  bookingType: BookingType;
+  groupId?: string | null;
   guestName: string;
   guestPhone: string;
   guestEmail?: string;

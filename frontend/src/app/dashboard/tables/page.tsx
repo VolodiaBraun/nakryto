@@ -85,7 +85,7 @@ export default function TablesPage() {
 
   // Массовое закрытие
   const [massModal, setMassModal] = useState(false);
-  const [massForm, setMassForm] = useState({ startsAt: '', endsAt: '', reason: '' });
+  const [massForm, setMassForm] = useState({ startsAt: '', endsAt: '', reason: '', guestName: '', guestPhone: '' });
 
   // Добавление периода для стола
   const [periodForm, setPeriodForm] = useState({ startsAt: '', endsAt: '', reason: '' });
@@ -151,7 +151,7 @@ export default function TablesPage() {
 
   const addMassPeriod = useMutation({
     mutationFn: (data: any) => closedPeriodsApi.create(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['closedPeriods'] }); setMassModal(false); setMassForm({ startsAt: '', endsAt: '', reason: '' }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['closedPeriods'] }); setMassModal(false); setMassForm({ startsAt: '', endsAt: '', reason: '', guestName: '', guestPhone: '' }); },
   });
 
   const createBooking = useMutation({
@@ -221,6 +221,8 @@ export default function TablesPage() {
       startsAt: new Date(massForm.startsAt).toISOString(),
       endsAt: new Date(massForm.endsAt).toISOString(),
       reason: massForm.reason || undefined,
+      guestName: massForm.guestName || undefined,
+      guestPhone: massForm.guestPhone || undefined,
     });
   };
 
@@ -616,6 +618,16 @@ export default function TablesPage() {
             <div>
               <label className="text-xs text-gray-500 block mb-1">Причина</label>
               <input type="text" value={massForm.reason} onChange={(e) => setMassForm({ ...massForm, reason: e.target.value })} placeholder="Санитарный день, ремонт, мероприятие..." className="input text-sm" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">ФИО клиента (если мероприятие)</label>
+                <input type="text" value={massForm.guestName} onChange={(e) => setMassForm({ ...massForm, guestName: e.target.value })} placeholder="Иван Петров" className="input text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Телефон клиента</label>
+                <input type="tel" value={massForm.guestPhone} onChange={(e) => setMassForm({ ...massForm, guestPhone: e.target.value })} placeholder="+79001234567" className="input text-sm" />
+              </div>
             </div>
             <div className="flex gap-3">
               <button onClick={() => setMassModal(false)} className="flex-1 py-2.5 border border-gray-300 rounded-xl text-sm text-gray-700 hover:bg-gray-50">Отмена</button>

@@ -8,6 +8,16 @@ export class ListBookingsDto {
   @IsString()
   date?: string;
 
+  @ApiPropertyOptional({ description: 'Начало диапазона дат (YYYY-MM-DD), для экспорта' })
+  @IsOptional()
+  @IsString()
+  dateFrom?: string;
+
+  @ApiPropertyOptional({ description: 'Конец диапазона дат (YYYY-MM-DD), для экспорта' })
+  @IsOptional()
+  @IsString()
+  dateTo?: string;
+
   @ApiPropertyOptional({ description: 'Фильтр по залу' })
   @IsOptional()
   @IsString()

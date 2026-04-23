@@ -24,4 +24,14 @@ export class CreateClosedPeriodDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @ApiPropertyOptional({ example: 'Иван Петров', description: 'Имя клиента (для корпоративных мероприятий)' })
+  @IsOptional()
+  @IsString()
+  guestName?: string;
+
+  @ApiPropertyOptional({ example: '+79001234567', description: 'Телефон клиента' })
+  @IsOptional()
+  @IsString()
+  guestPhone?: string;
 }

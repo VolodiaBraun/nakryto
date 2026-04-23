@@ -2,6 +2,8 @@ import { Controller, Get, Post, Put, Body, Param, Query, UseGuards } from '@nest
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto } from './dto/create-booking.dto';
+import { CreateHallBookingDto } from './dto/create-hall-booking.dto';
+import { CreateGroupBookingDto } from './dto/create-group-booking.dto';
 import { UpdateBookingDto } from './dto/update-booking.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { ListBookingsDto } from './dto/list-bookings.dto';
@@ -40,6 +42,24 @@ export class BookingsController {
     @Body() dto: CreateBookingDto,
   ) {
     return this.service.create(restaurantId, dto, 'MANUAL');
+  }
+
+  @Post('hall')
+  @ApiOperation({ summary: 'Забронировать весь зал (корпоратив)' })
+  createHall(
+    @CurrentUser('restaurantId') restaurantId: string,
+    @Body() dto: CreateHallBookingDto,
+  ) {
+    return this.service.createHallBooking(restaurantId, dto);
+  }
+
+  @Post('group')
+  @ApiOperation({ summary: 'Забронировать группу столов' })
+  createGroup(
+    @CurrentUser('restaurantId') restaurantId: string,
+    @Body() dto: CreateGroupBookingDto,
+  ) {
+    return this.service.createGroupBooking(restaurantId, dto);
   }
 
   @Put(':id')
