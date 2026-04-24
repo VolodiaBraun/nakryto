@@ -26,6 +26,15 @@ export class PublicApiController {
     return this.service.getHalls(slug);
   }
 
+  @Get(':slug/hall/:hallSlug')
+  @ApiOperation({ summary: 'Зал по slug (redirectTo заполнен если slug устарел)' })
+  getHallBySlug(
+    @Param('slug') slug: string,
+    @Param('hallSlug') hallSlug: string,
+  ) {
+    return this.service.getHallBySlug(slug, hallSlug);
+  }
+
   @Get(':slug/availability')
   @ApiOperation({ summary: 'Доступные слоты на дату' })
   @ApiQuery({ name: 'date', example: '2025-03-15' })

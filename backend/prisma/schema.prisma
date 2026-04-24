@@ -139,6 +139,8 @@ model Hall {
   restaurantId String
   restaurant   Restaurant @relation(fields: [restaurantId], references: [id], onDelete: Cascade)
   name         String
+  slug         String?
+  oldSlugs     String[]   @default([])
   // Konva.js JSON: { width, height, objects: [...] }
   floorPlan    Json       @default("{\"width\":800,\"height\":600,\"objects\":[]}")
   photos       String[]   @default([])
@@ -151,6 +153,7 @@ model Hall {
   bookings      Booking[]
   closedPeriods ClosedPeriod[]
 
+  @@unique([restaurantId, slug])
   @@map("halls")
 }
 

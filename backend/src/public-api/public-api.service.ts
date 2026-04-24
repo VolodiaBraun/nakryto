@@ -5,6 +5,7 @@ import { BookingsService } from '../bookings/bookings.service';
 import { PlanLimitsService } from '../plan-limits/plan-limits.service';
 import { BookingGateway } from '../websocket/websocket.gateway';
 import { CreateBookingDto } from '../bookings/dto/create-booking.dto';
+import { nameToSlug } from '../halls/hall-slug.utils';
 import { REDIS_CLIENT } from '../redis/redis.module';
 import type Redis from 'ioredis';
 
@@ -87,20 +88,61 @@ export class PublicApiService {
     });
     if (!restaurant) throw new NotFoundException('Ресторан не найден');
 
-    return this.prisma.hall.findMany({
+    const tableSelect = {
+      id: true, label: true, shape: true, minGuests: true, maxGuests: true,
+      positionX: true, positionY: true, rotation: true, width: true, height: true,
+      comment: true, tags: true, photos: true,
+    };
+
+    const halls = await this.prisma.hall.findMany({
       where: { restaurantId: restaurant.id, isActive: true },
-      include: {
-        tables: {
-          where: { isActive: true },
-          select: {
-            id: true, label: true, shape: true, minGuests: true, maxGuests: true,
-            positionX: true, positionY: true, rotation: true, width: true, height: true,
-            comment: true, tags: true, photos: true,
-          },
-        },
-      },
+      include: { tables: { where: { isActive: true }, select: tableSelect } },
       orderBy: { sortOrder: 'asc' },
     });
+
+    // Lazy backfill: generate slugs for halls without one
+    for (const hall of halls) {
+      if (!hall.slug) {
+        let slug = nameToSlug(hall.name);
+        let i = 2;
+        while (await this.prisma.hall.findFirst({ where: { restaurantId: restaurant.id, slug, id: { not: hall.id } } })) {
+          slug = `${nameToSlug(hall.name)}-${i++}`;
+        }
+        await this.prisma.hall.update({ where: { id: hall.id }, data: { slug } });
+        (hall as any).slug = slug;
+      }
+    }
+
+    return halls;
+  }
+
+  async getHallBySlug(restaurantSlug: string, hallSlug: string) {
+    const restaurant = await this.prisma.restaurant.findUnique({
+      where: { slug: restaurantSlug, isActive: true },
+    });
+    if (!restaurant) throw new NotFoundException('Ресторан не найден');
+
+    const tableSelect = {
+      id: true, label: true, shape: true, minGuests: true, maxGuests: true,
+      positionX: true, positionY: true, rotation: true, width: true, height: true,
+      comment: true, tags: true, photos: true,
+    };
+
+    // Current slug
+    let hall = await this.prisma.hall.findFirst({
+      where: { restaurantId: restaurant.id, slug: hallSlug, isActive: true },
+      include: { tables: { where: { isActive: true }, select: tableSelect } },
+    });
+    if (hall) return { hall, redirectTo: null };
+
+    // Old slug → redirect to current slug
+    hall = await this.prisma.hall.findFirst({
+      where: { restaurantId: restaurant.id, oldSlugs: { has: hallSlug }, isActive: true },
+      include: { tables: { where: { isActive: true }, select: tableSelect } },
+    });
+    if (hall) return { hall, redirectTo: hall.slug };
+
+    throw new NotFoundException('Зал не найден');
   }
 
   async getAvailability(slug: string, date: string, guestCount: number) {

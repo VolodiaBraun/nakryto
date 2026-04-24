@@ -303,6 +303,9 @@ export const publicApi = {
 
   getHalls: (slug: string) => request(`/api/public/${slug}/halls`),
 
+  getHallBySlug: (slug: string, hallSlug: string) =>
+    request(`/api/public/${slug}/hall/${hallSlug}`),
+
   getAvailability: (slug: string, date: string, guests: number) =>
     request(`/api/public/${slug}/availability?date=${date}&guests=${guests}`),
 
