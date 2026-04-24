@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -9,7 +9,7 @@ export class BookingsScheduler {
   constructor(private prisma: PrismaService) {}
 
   // Каждые 15 минут завершаем истёкшие брони
-  @Cron(CronExpression.EVERY_15_MINUTES)
+  @Cron('0 */15 * * * *')
   async autoComplete() {
     const now = new Date();
 
