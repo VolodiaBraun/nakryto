@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { PlanLimitsService } from '../plan-limits/plan-limits.service';
 import { CreateHallDto } from './dto/create-hall.dto';
 import { UpdateHallDto } from './dto/update-hall.dto';
+import { nameToSlug } from './hall-slug.utils';
 
 // Шаблоны залов для онбординга
 const HALL_TEMPLATES = {
@@ -59,12 +60,35 @@ export class HallsService {
     private planLimits: PlanLimitsService,
   ) {}
 
+  private async generateUniqueSlug(base: string, restaurantId: string, excludeId: string | null): Promise<string> {
+    let slug = base;
+    let i = 2;
+    while (true) {
+      const existing = await this.prisma.hall.findFirst({
+        where: { restaurantId, slug, ...(excludeId ? { id: { not: excludeId } } : {}) },
+      });
+      if (!existing) return slug;
+      slug = `${base}-${i++}`;
+    }
+  }
+
   async findAll(restaurantId: string) {
-    return this.prisma.hall.findMany({
+    const halls = await this.prisma.hall.findMany({
       where: { restaurantId, isActive: true },
       include: { tables: { where: { isActive: true }, orderBy: { label: 'asc' } } },
       orderBy: { sortOrder: 'asc' },
     });
+
+    // Lazy backfill: generate slugs for halls without one
+    for (const hall of halls) {
+      if (!hall.slug) {
+        const slug = await this.generateUniqueSlug(nameToSlug(hall.name), restaurantId, hall.id);
+        await this.prisma.hall.update({ where: { id: hall.id }, data: { slug } });
+        (hall as any).slug = slug;
+      }
+    }
+
+    return halls;
   }
 
   async findOne(id: string, restaurantId: string) {
@@ -93,10 +117,13 @@ export class HallsService {
       throw new ForbiddenException('Достигнут лимит залов для вашего тарифа');
     }
 
+    const slug = await this.generateUniqueSlug(nameToSlug(dto.name), restaurantId, null);
+
     return this.prisma.hall.create({
       data: {
         restaurantId,
         name: dto.name,
+        slug,
         floorPlan: dto.floorPlan || { width: 800, height: 600, objects: [] },
         sortOrder: dto.sortOrder || 0,
       },
@@ -122,10 +149,13 @@ export class HallsService {
       throw new ForbiddenException('Достигнут лимит залов для вашего тарифа');
     }
 
+    const slug = await this.generateUniqueSlug(nameToSlug(template.name), restaurantId, null);
+
     const hall = await this.prisma.hall.create({
       data: {
         restaurantId,
         name: template.name,
+        slug,
         floorPlan: template.floorPlan,
       },
     });
@@ -155,11 +185,21 @@ export class HallsService {
   }
 
   async update(id: string, restaurantId: string, dto: UpdateHallDto) {
-    await this.findOne(id, restaurantId);
+    const hall = await this.findOne(id, restaurantId);
+
+    let slugData: { slug?: string; oldSlugs?: string[] } = {};
+    if (dto.name && dto.name !== hall.name) {
+      const newSlug = await this.generateUniqueSlug(nameToSlug(dto.name), restaurantId, id);
+      const oldSlugs = [...((hall as any).oldSlugs ?? [])];
+      if ((hall as any).slug && !oldSlugs.includes((hall as any).slug)) {
+        oldSlugs.push((hall as any).slug);
+      }
+      slugData = { slug: newSlug, oldSlugs };
+    }
 
     return this.prisma.hall.update({
       where: { id },
-      data: dto,
+      data: { ...dto, ...slugData },
     });
   }
 

@@ -73,6 +73,8 @@ export interface Hall {
   id: string;
   restaurantId: string;
   name: string;
+  slug?: string;
+  oldSlugs?: string[];
   floorPlan: FloorPlan;
   photos?: string[];
   sortOrder: number;
